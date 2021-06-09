@@ -52,7 +52,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
         logger_kwargs=dict(), save_freq=1):
     """
-    Soft Actor-Critic (SAC)
+    Latent-Conditioned Soft Actor-Critic (LSAC)
 
 
     Args:
