@@ -5,28 +5,32 @@ import torch
 from torch.optim import Adam
 import gym
 import time
-import spinup.algos.pytorch.sac.core as core
+import spinup.algos.pytorch.lsac.core as core
 from spinup.utils.logx import EpochLogger
 
 
 class ReplayBuffer:
     """
-    A simple FIFO experience replay buffer for SAC agents.
+    Store tuples of observation, action, next observation, reward, latent (skill) variable and done signal
+    according to the "Algorithm 1" box in the paper.
+    In the paper, the done signal is not required to be in the replay buffer.
     """
 
-    def __init__(self, obs_dim, act_dim, size):
+    def __init__(self, obs_dim, act_dim, skill_dim, size):
         self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
+        self.skill_buf = np.zeros(core.combined_shape(size, skill_dim), dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, next_obs, done):
+    def store(self, obs, act, rew, skill, next_obs, done):
         self.obs_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
+        self.skill_buf[self.ptr] = skill
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr+1) % self.max_size
         self.size = min(self.size+1, self.max_size)
@@ -37,9 +41,9 @@ class ReplayBuffer:
                      obs2=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
+                     skill=self.skill_buf[idxs],
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
-
 
 
 def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
