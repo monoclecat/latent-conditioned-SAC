@@ -50,7 +50,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
-        logger_kwargs=dict(), save_freq=1):
+        logger_kwargs=dict(), save_freq=1, num_skills=3):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -146,6 +146,8 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
+        num_skills (int): The dimension of the latent variable vector
+
     """
 
     logger = EpochLogger(**logger_kwargs)
@@ -173,7 +175,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
     # Experience buffer
-    replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, size=replay_size)
+    replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, skill_dim=num_skills, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
@@ -181,7 +183,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
-        o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
 
         q1 = ac.q1(o,a)
         q2 = ac.q2(o,a)
