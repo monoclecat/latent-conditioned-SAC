@@ -309,8 +309,11 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         # that isn't based on the agent's state)
         d = False if ep_len==max_ep_len else d
 
+        # TODO Set z to zero to enable the code to run, fix it 
+        z = 0
+
         # Store experience to replay buffer
-        replay_buffer.store(o, a, r, o2, d)
+        replay_buffer.store(o, a, r, z, o2, d)
 
         # Super critical, easy to overlook step: make sure to update 
         # most recent observation!
@@ -362,7 +365,7 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--exp_name', type=str, default='sac')
+    parser.add_argument('--exp_name', type=str, default='lsac')
     args = parser.parse_args()
 
     from spinup.utils.run_utils import setup_logger_kwargs
