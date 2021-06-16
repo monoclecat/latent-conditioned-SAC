@@ -48,10 +48,10 @@ class ReplayBuffer:
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
-        polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
-        logger_kwargs=dict(), save_freq=1, cont_skills=3, disc_skills=3):
+        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
+        polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
+        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
+        logger_kwargs=dict(), save_freq=1, num_cont_skills=1, num_disc_skills=3):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -147,9 +147,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
-        cont_skills (int): The dimension of the continuous-valued latent variable vector
+        num_cont_skills (int): The dimension of the continuous-valued latent variable vector
 
-        disc_skills (int): The dimension of the discrete-valued latent variable vector
+        num_disc_skills (int): The dimension of the discrete-valued latent variable vector
 
     """
 
@@ -159,6 +159,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+    disc_skill_prob = 1.0 / num_disc_skills
+
     env, test_env = env_fn(), env_fn()
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
@@ -167,7 +169,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic(env.observation_space, env.action_space, cont_skills, disc_skills, **ac_kwargs)
+    ac = actor_critic(env.observation_space, env.action_space, num_cont_skills, num_disc_skills, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -178,7 +180,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
     # Experience buffer
-    num_skills = cont_skills + disc_skills
+    num_skills = num_cont_skills + num_disc_skills
     replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, skill_dim=num_skills, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
@@ -189,17 +191,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def compute_loss_q(data):
         o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
 
-        q1 = ac.q1(o,a)
-        q2 = ac.q2(o,a)
+        q1 = ac.q1(o, a, z)
+        q2 = ac.q2(o, a, z)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
-            a2, logp_a2 = ac.pi(o2)
+            a2, logp_a2 = ac.pi(o2, z)
 
             # Target Q-values
-            q1_pi_targ = ac_targ.q1(o2, a2)
-            q2_pi_targ = ac_targ.q2(o2, a2)
+            q1_pi_targ = ac_targ.q1(o2, a2, z)
+            q2_pi_targ = ac_targ.q2(o2, a2, z)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 
@@ -216,10 +218,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(data):
-        o = data['obs']
-        pi, logp_pi = ac.pi(o)
-        q1_pi = ac.q1(o, pi)
-        q2_pi = ac.q2(o, pi)
+        o, z = data['obs'], data['skill']
+        pi, logp_pi = ac.pi(o, z)
+        q1_pi = ac.q1(o, pi, z)
+        q2_pi = ac.q2(o, pi, z)
         q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
@@ -229,6 +231,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         pi_info = dict(LogPi=logp_pi.detach().numpy())
 
         return loss_pi, pi_info
+
+    def compute_loss_info(data):
+        o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
+        # TODO Implement info loss function
 
     # Set up optimizers for policy and q-function
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
@@ -273,8 +279,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 p_targ.data.mul_(polyak)
                 p_targ.data.add_((1 - polyak) * p.data)
 
-    def get_action(o, deterministic=False):
-        return ac.act(torch.as_tensor(o, dtype=torch.float32), 
+    def get_action(o, skills, deterministic=False):
+        return ac.act(torch.cat([torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32)]),
                       deterministic)
 
     def test_agent():
@@ -292,9 +298,13 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     start_time = time.time()
     o, ep_ret, ep_len = env.reset(), 0, 0
 
+    disc_skill = np.zeros(num_disc_skills)
+    disc_skill[np.random.randint(num_disc_skills)] = 1.0
+    cont_skills = np.random.uniform(-1, 1, num_cont_skills)
+    skills = np.concatenate((cont_skills, disc_skill))
+
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
-        
         # Until start_steps have elapsed, randomly sample actions
         # from a uniform distribution for better exploration. Afterwards, 
         # use the learned policy. 
@@ -313,11 +323,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # that isn't based on the agent's state)
         d = False if ep_len==max_ep_len else d
 
-        # TODO Set z to zero to enable the code to run, fix it 
-        z = 0
-
         # Store experience to replay buffer
-        replay_buffer.store(o, a, r, z, o2, d)
+        replay_buffer.store(o, a, r, skills, o2, d)
 
         # Super critical, easy to overlook step: make sure to update 
         # most recent observation!
@@ -328,8 +335,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
+        # TODO different update intervals for the critic, the actor and the info-objective
         # Update handling
         if t >= update_after and t % update_every == 0:
+            print(f"    Updated at {t}")
             for j in range(update_every):
                 batch = replay_buffer.sample_batch(batch_size)
                 update(data=batch)
@@ -377,7 +386,6 @@ if __name__ == '__main__':
 
     torch.set_num_threads(torch.get_num_threads())
 
-    lsac(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
-        ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), 
-        gamma=args.gamma, seed=args.seed, epochs=args.epochs,
-        logger_kwargs=logger_kwargs)
+    lsac(lambda: gym.make(args.env), actor_critic=core.OsaSkillActorCritic,
+         ac_kwargs=dict(hidden_sizes=[args.hid] * args.l), seed=args.seed, epochs=args.epochs, gamma=args.gamma,
+         logger_kwargs=logger_kwargs)

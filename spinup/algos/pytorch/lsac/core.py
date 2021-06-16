@@ -28,15 +28,16 @@ LOG_STD_MIN = -20
 
 class SquashedGaussianMLPActor(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation, act_limit):
+    def __init__(self, obs_dim, skill_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
-        self.net = mlp([obs_dim] + list(hidden_sizes), activation, activation)
+        # TODO Not sure about this network structure. In the paper, the skill input first goes into a fc layer
+        self.net = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
 
-    def forward(self, obs, deterministic=False, with_logprob=True):
-        net_out = self.net(obs)
+    def forward(self, obs, skill, deterministic=False, with_logprob=True):
+        net_out = self.net(torch.cat([obs, skill], dim=1))
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
@@ -69,21 +70,22 @@ class SquashedGaussianMLPActor(nn.Module):
 
 class MLPQFunction(nn.Module):
 
-    def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, skill_dim, hidden_sizes, activation):
         super().__init__()
-        self.q = mlp([obs_dim + act_dim] + list(hidden_sizes) + [1], activation)
+        # TODO Not sure about this network structure. In the paper, the skill input first goes into a fc layer
+        self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
 
-    def forward(self, obs, act):
-        q = self.q(torch.cat([obs, act], dim=-1))
+    def forward(self, obs, act, skill):
+        q = self.q(torch.cat([obs, act, skill], dim=-1))
         return torch.squeeze(q, -1)  # Critical to ensure q has right shape.
 
 
 class Discriminator(nn.Module):
-    def __init__(self, obs_dim, act_dim, cont_skills, disc_skills, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, num_cont_skills, num_disc_skills, hidden_sizes, activation):
         super().__init__()
         self.net = mlp([obs_dim + act_dim] + list(hidden_sizes), activation, activation)
-        self.cont_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], cont_skills), nn.ReLU())
-        self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], disc_skills), nn.Softmax())
+        self.cont_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_cont_skills), nn.ReLU())
+        self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
 
     def forward(self, obs):
         net_out = self.net(obs)
@@ -94,20 +96,20 @@ class Discriminator(nn.Module):
 
 class OsaSkillActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, cont_skills, disc_skills, hidden_sizes=(256,256),
+    def __init__(self, observation_space, action_space, num_cont_skills, num_disc_skills, hidden_sizes=(256,256),
                  activation=nn.ReLU):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
-        obs_with_skill_dim = obs_dim + cont_skills + disc_skills
+        num_skills = num_cont_skills + num_disc_skills
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_with_skill_dim, act_dim, hidden_sizes, activation, act_limit)
-        self.d = Discriminator(obs_dim, act_dim, cont_skills, disc_skills, hidden_sizes, activation)
-        self.q1 = MLPQFunction(obs_with_skill_dim, act_dim, hidden_sizes, activation)
-        self.q2 = MLPQFunction(obs_with_skill_dim, act_dim, hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(obs_dim, num_skills, act_dim, hidden_sizes, activation, act_limit)
+        self.d = Discriminator(obs_dim, act_dim, num_cont_skills, num_disc_skills, hidden_sizes, activation)
+        self.q1 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
+        self.q2 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
 
     def act(self, obs, deterministic=False):
         with torch.no_grad():
