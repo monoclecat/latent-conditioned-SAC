@@ -21,6 +21,7 @@ class ReplayBuffer:
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
+        # Skill_buf is made up of the continuous latent variables and discrete lat. var. concatenated in that order
         self.skill_buf = np.zeros(core.combined_shape(size, skill_dim), dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
@@ -50,7 +51,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
-        logger_kwargs=dict(), save_freq=1, num_skills=3):
+        logger_kwargs=dict(), save_freq=1, cont_skills=3, disc_skills=3):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -146,7 +147,9 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
-        num_skills (int): The dimension of the latent variable vector
+        cont_skills (int): The dimension of the continuous-valued latent variable vector
+
+        disc_skills (int): The dimension of the discrete-valued latent variable vector
 
     """
 
@@ -175,6 +178,7 @@ def lsac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
     # Experience buffer
+    num_skills = cont_skills + disc_skills
     replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, skill_dim=num_skills, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
