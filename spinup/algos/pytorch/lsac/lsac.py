@@ -51,7 +51,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
-        logger_kwargs=dict(), save_freq=1, num_cont_skills=1, num_disc_skills=3):
+        logger_kwargs=dict(), save_freq=1, num_cont_skills=1, num_disc_skills=3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -151,6 +151,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         num_disc_skills (int): The dimension of the discrete-valued latent variable vector
 
+        clip (float): The importance weight clipping hyperparameter
     """
 
     logger = EpochLogger(**logger_kwargs)
@@ -234,6 +235,20 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     def compute_loss_info(data):
         o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
+
+        q1_pi = ac.q1(o, a, z)
+        q2_pi = ac.q2(o, a, z)
+        q_pi = torch.min(q1_pi, q2_pi)
+
+        pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
+
+
+
+        with torch.no_grad():
+            imp_weight = q_pi.exp_().sum()
+            w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
+
+        print(".")
         # TODO Implement info loss function
 
     # Set up optimizers for policy and q-function
@@ -267,6 +282,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # Unfreeze Q-networks so you can optimize it at next DDPG step.
         for p in q_params:
             p.requires_grad = True
+
+        # TODO this is only here for debugging. Update() right now doesn't regard update intervals
+        compute_loss_info(data)
 
         # Record things
         logger.store(LossPi=loss_pi.item(), **pi_info)
@@ -334,6 +352,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
+            # TODO sample new latent variable
 
         # TODO different update intervals for the critic, the actor and the info-objective
         # Update handling
