@@ -87,8 +87,8 @@ class Discriminator(nn.Module):
         self.cont_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_cont_skills), nn.ReLU())
         self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
 
-    def forward(self, obs):
-        net_out = self.net(obs)
+    def forward(self, obs, act):
+        net_out = self.net(torch.cat([obs, act], dim=1))
         cont = self.cont_layer(net_out)
         disc = self.disc_layer(net_out)
         return cont, disc
