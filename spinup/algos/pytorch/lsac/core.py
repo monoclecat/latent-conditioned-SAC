@@ -30,14 +30,18 @@ class SquashedGaussianMLPActor(nn.Module):
 
     def __init__(self, obs_dim, skill_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
-        # TODO Not sure about this network structure. In the paper, the skill input first goes into a fc layer
-        self.net = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
+        # Implemented fully connected layer for skill, not sure if completly correct
+        self.skillLayer = mlp([skill_dim, skill_dim], activation, activation)
+        self.skillObsActLayer = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
+
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
 
     def forward(self, obs, skill, deterministic=False, with_logprob=True):
-        net_out = self.net(torch.cat([obs, skill], dim=1))
+        skill_out = self.skillLayer(skill)
+        net_out = self.skillObsActLayer(torch.cat((obs, skill_out), dim=1))
+
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
         log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
