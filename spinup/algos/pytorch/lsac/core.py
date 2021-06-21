@@ -31,6 +31,8 @@ class SquashedGaussianMLPActor(nn.Module):
     def __init__(self, obs_dim, skill_dim, act_dim, hidden_sizes, activation, act_limit):
         super().__init__()
         # Implemented fully connected layer for skill, not sure if completly correct
+        # How was the dimensions for the network determinated?
+        # Size of the layer fc1 is not clear
         self.skillLayer = mlp([skill_dim, skill_dim], activation, activation)
         self.skillObsActLayer = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
 
@@ -76,11 +78,15 @@ class MLPQFunction(nn.Module):
 
     def __init__(self, obs_dim, act_dim, skill_dim, hidden_sizes, activation):
         super().__init__()
-        # TODO Not sure about this network structure. In the paper, the skill input first goes into a fc layer
+        # Implemented fully connected layer for skill, not sure if completly correct
+        # How was the dimensions for the network determinated?
+        # Size of the layer fc1 is not clear
+        self.skillNetwork = mlp([skill_dim, skill_dim], activation, activation)
         self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs, act, skill):
-        q = self.q(torch.cat([obs, act, skill], dim=-1))
+        skill_out = self.skillNetwork(skill)
+        q = self.q(torch.cat([obs, act, skill_out], dim=-1))
         return torch.squeeze(q, -1)  # Critical to ensure q has right shape.
 
 
