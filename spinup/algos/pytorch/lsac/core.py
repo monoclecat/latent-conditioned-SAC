@@ -99,33 +99,30 @@ class MLPQFunction(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, obs_dim, act_dim, num_cont_skills, num_disc_skills, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, num_skills, hidden_sizes, activation):
         super().__init__()
         self.net = mlp([obs_dim + act_dim] + list(hidden_sizes), activation, activation)
-        self.cont_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_cont_skills), nn.ReLU())
-        self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
+        self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_skills), nn.Softmax())
 
     def forward(self, obs, act):
         net_out = self.net(torch.cat([obs, act], dim=1))
-        cont = self.cont_layer(net_out)
         disc = self.disc_layer(net_out)
-        return cont, disc
+        return disc
 
 
 class OsaSkillActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, num_cont_skills, num_disc_skills, hidden_sizes=(256,256),
+    def __init__(self, observation_space, action_space, num_skills, hidden_sizes=(256,256),
                  activation=nn.ReLU):
         super().__init__()
 
         obs_dim = observation_space.shape[0]
-        num_skills = num_cont_skills + num_disc_skills
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
         # build policy and value functions
         self.pi = SquashedGaussianMLPActor(obs_dim, num_skills, act_dim, hidden_sizes, activation, act_limit)
-        self.d = Discriminator(obs_dim, act_dim, num_cont_skills, num_disc_skills, hidden_sizes, activation)
+        self.d = Discriminator(obs_dim, act_dim, num_skills, hidden_sizes, activation)
         self.q1 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
 

@@ -51,7 +51,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
-        logger_kwargs=dict(), save_freq=1, num_cont_skills=0, num_disc_skills=4, clip=0.2):
+        logger_kwargs=dict(), save_freq=1, num_skills=4, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -147,10 +147,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
-        num_cont_skills (int): The dimension of the continuous-valued latent variable vector
-            Set to zero to prevent working with cont skills
-
-        num_disc_skills (int): The dimension of the discrete-valued latent variable vector
+        num_skills (int): The dimension of the latent variable vector
 
         clip (float): The importance weight clipping hyperparameter
     """
@@ -161,8 +158,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    disc_skill_prob = 1.0 / num_disc_skills
-
     env, test_env = env_fn(), env_fn()
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
@@ -171,7 +166,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic(env.observation_space, env.action_space, num_cont_skills, num_disc_skills, **ac_kwargs)
+    ac = actor_critic(env.observation_space, env.action_space, num_skills, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -182,7 +177,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
     # Experience buffer
-    num_skills = num_cont_skills + num_disc_skills
     replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, skill_dim=num_skills, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
@@ -242,8 +236,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q_pi = torch.min(q1_pi, q2_pi)
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
-
-
 
         with torch.no_grad():
             imp_weight = q_pi.exp_().sum()
@@ -317,8 +309,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     start_time = time.time()
     o, ep_ret, ep_len = env.reset(), 0, 0
 
-    skills = np.zeros(num_disc_skills)
-    skills[np.random.randint(num_disc_skills)] = True
+    skills = np.zeros(num_skills)
+    skills[np.random.randint(num_skills)] = True
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
