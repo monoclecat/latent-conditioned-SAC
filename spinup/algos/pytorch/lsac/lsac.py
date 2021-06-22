@@ -49,9 +49,9 @@ class ReplayBuffer:
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
-        polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
+        polyak=0.995, lr=1e-4, alpha=0.2, batch_size=256, start_steps=10000,
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
-        logger_kwargs=dict(), save_freq=1, num_skills=4, clip=0.2):
+        logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -148,6 +148,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             the current policy and value function.
 
         num_skills (int): The dimension of the latent variable vector
+
+        interval_max_JQ: The interval for maximizing JQ
+
+        interval_max_JINFO: The interval for maximizing JInfo
 
         clip (float): The importance weight clipping hyperparameter
     """
