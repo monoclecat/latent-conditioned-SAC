@@ -347,16 +347,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
-            
+
             skills[np.random.randint(num_skills)] = True
 
         
         # different update intervals for the critic, the actor and the info-objective
-        if t % interval_max_JQ:
+        if t % interval_max_JQ == 0:
             # TODO Implement JQ
             print("Maximize JQ")
 
-        if t % interval_max_JINFO:
+        if t % interval_max_JINFO == 0:
             # TODO Implement JInfo
             print("Maximize JInfo")
 
