@@ -349,7 +349,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             o, ep_ret, ep_len = env.reset(), 0, 0
             # TODO sample new latent variable
 
-        # TODO different update intervals for the critic, the actor and the info-objective
+        
+        # different update intervals for the critic, the actor and the info-objective
+        if t % interval_max_JQ:
+            # TODO Implement JQ
+            print("Maximize JQ")
+
+        if t % interval_max_JINFO:
+            # TODO Implement JInfo
+            print("Maximize JInfo")
+
         # Update handling
         if t >= update_after and t % update_every == 0:
             print(f"    Updated at {t}")
