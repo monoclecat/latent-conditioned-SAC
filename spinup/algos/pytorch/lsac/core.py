@@ -33,16 +33,20 @@ class SquashedGaussianMLPActor(nn.Module):
         # Implemented fully connected layer for skill, not sure if completly correct
         # How was the dimensions for the network determinated?
         # Size of the layer fc1 is not clear
-        self.skillLayer = mlp([skill_dim, skill_dim], activation, activation)
-        self.skillObsActLayer = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
+        
+        self.net = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
+        
+        # self.skillLayer = mlp([skill_dim, skill_dim], activation, activation)
+        # self.skillObsActLayer = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
 
         self.mu_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.log_std_layer = nn.Linear(hidden_sizes[-1], act_dim)
         self.act_limit = act_limit
 
     def forward(self, obs, skill, deterministic=False, with_logprob=True):
-        skill_out = self.skillLayer(skill)
-        net_out = self.skillObsActLayer(torch.cat((obs, skill_out), dim=1))
+        net_out = self.net(torch.cat((obs, skill), dim=1))
+        # skill_out = self.skillLayer(skill)
+        # net_out = self.skillObsActLayer(torch.cat((obs, skill_out), dim=1))
 
         mu = self.mu_layer(net_out)
         log_std = self.log_std_layer(net_out)
@@ -81,12 +85,16 @@ class MLPQFunction(nn.Module):
         # Implemented fully connected layer for skill, not sure if completly correct
         # How was the dimensions for the network determinated?
         # Size of the layer fc1 is not clear
-        self.skillNetwork = mlp([skill_dim, skill_dim], activation, activation)
-        self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
+
+        # self.skillNetwork = mlp([skill_dim, skill_dim], activation, activation)
+        # self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
+
+        self.net = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs, act, skill):
-        skill_out = self.skillNetwork(skill)
-        q = self.q(torch.cat([obs, act, skill_out], dim=-1))
+        # skill_out = self.skillNetwork(skill)
+        # q = self.q(torch.cat([obs, act, skill_out], dim=-1))
+        q = self.q(torch.cat([obs, act, skill], dim=-1))
         return torch.squeeze(q, -1)  # Critical to ensure q has right shape.
 
 
