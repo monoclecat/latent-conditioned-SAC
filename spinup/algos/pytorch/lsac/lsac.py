@@ -21,8 +21,8 @@ class ReplayBuffer:
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
-        # Skill_buf is made up of the continuous latent variables and discrete lat. var. concatenated in that order
-        self.skill_buf = np.zeros(core.combined_shape(size, skill_dim), dtype=np.float32)
+        # Skill_buf is made up of the discrete lat. var.
+        self.skill_buf = np.zeros(core.combined_shape(size, skill_dim), dtype=np.bool_)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
@@ -51,7 +51,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000,
         update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
-        logger_kwargs=dict(), save_freq=1, num_cont_skills=1, num_disc_skills=3, clip=0.2):
+        logger_kwargs=dict(), save_freq=1, num_cont_skills=0, num_disc_skills=4, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -148,6 +148,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             the current policy and value function.
 
         num_cont_skills (int): The dimension of the continuous-valued latent variable vector
+            Set to zero to prevent working with cont skills
 
         num_disc_skills (int): The dimension of the discrete-valued latent variable vector
 
@@ -316,10 +317,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     start_time = time.time()
     o, ep_ret, ep_len = env.reset(), 0, 0
 
-    disc_skill = np.zeros(num_disc_skills)
-    disc_skill[np.random.randint(num_disc_skills)] = 1.0
-    cont_skills = np.random.uniform(-1, 1, num_cont_skills)
-    skills = np.concatenate((cont_skills, disc_skill))
+    skills = np.zeros(num_disc_skills)
+    skills[np.random.randint(num_disc_skills)] = True
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):

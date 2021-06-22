@@ -89,7 +89,7 @@ class MLPQFunction(nn.Module):
         # self.skillNetwork = mlp([skill_dim, skill_dim], activation, activation)
         # self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
 
-        self.net = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
+        self.q = mlp([obs_dim + act_dim + skill_dim] + list(hidden_sizes) + [1], activation)
 
     def forward(self, obs, act, skill):
         # skill_out = self.skillNetwork(skill)
