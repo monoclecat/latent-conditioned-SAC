@@ -373,6 +373,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
+            skills = np.zeros(num_skills)
             skills[np.random.randint(num_skills)] = True
 
         if t >= update_after:
