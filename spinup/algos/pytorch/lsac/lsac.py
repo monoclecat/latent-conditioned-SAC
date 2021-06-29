@@ -50,7 +50,7 @@ class ReplayBuffer:
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=1e-4, alpha=0.2, batch_size=256, start_steps=10000,
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000,
+        update_after=1, update_every=50, num_test_episodes=10, max_ep_len=1000,
         logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
@@ -350,19 +350,18 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
             skills[np.random.randint(num_skills)] = True
 
-        
-        # different update intervals for the critic, the actor and the info-objective
-        if t % interval_max_JQ == 0:
-            # TODO Implement JQ
-            print("Maximize JQ")
+        if t >= update_after:
+            # different update intervals for the critic, the actor and the info-objective
+            if t % interval_max_JQ == 0:
+                # TODO Implement JQ
+                print("Maximize JQ")
 
-        if t % interval_max_JINFO == 0:
-            # TODO Implement JInfo
-            print("Maximize JInfo")
+            if t % interval_max_JINFO == 0:
+                # TODO Implement JInfo
+                print("Maximize JInfo")
 
         # Update handling
         if t >= update_after and t % update_every == 0:
-            print(f"    Updated at {t}")
             for j in range(update_every):
                 batch = replay_buffer.sample_batch(batch_size)
                 update(data=batch)
