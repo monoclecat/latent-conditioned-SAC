@@ -258,14 +258,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         _, skills = np.where(z == 1)
         logits = ac.d(obs=o, act=pi)
 
-        # TODO Cross entropy loss isn't using importance weight yet. cross_entropy() has a weight argument...
-        loss_info = F.cross_entropy(logits, torch.tensor(skills))
+        # TODO Cross entropy loss isn't using importance weight yet.
+        #  But should work well without clipping (see fig. 17)
+        #  Maybe elementwise mult. of imp. weight with the discriminator output?
+        loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='mean')
 
         return loss_info
 
-    # Set up optimizers for policy and q-function
+    # Set up optimizers for policy, q-function and discriminator
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
     q_optimizer = Adam(q_params, lr=lr)
+    d_optimizer = Adam(ac.d.parameters(), lr=lr)
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -309,9 +312,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 p_targ.data.add_((1 - polyak) * p.data)
 
     def update_J_info(data):
-        # TODO In this function the loss function is called and the network weights updated
-        compute_loss_info(data)
+        d_optimizer.zero_grad()
+        loss_d = compute_loss_info(data)
+        loss_d.backward()
+        d_optimizer.step()
 
+        logger.store(LossD=loss_d.item())
 
     def get_action(o, skills, deterministic=False):
         return ac.act(torch.cat([torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32)]),
@@ -341,7 +347,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # from a uniform distribution for better exploration. Afterwards, 
         # use the learned policy. 
         if t > start_steps:
-            a = get_action(o)
+            a = get_action(o, skills)
         else:
             a = env.action_space.sample()
 
