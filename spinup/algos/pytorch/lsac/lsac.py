@@ -256,8 +256,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     logger.setup_pytorch_saver(ac)
 
     def update(data):
+        # TODO this is only here for debugging. Update() right now doesn't regard update intervals
+        compute_loss_info(data)
 
-        # Freeze Q-networks so you don't waste computational effort 
+    def update_actor(data):
+        # Freeze Q-networks so you don't waste computational effort
         # computing gradients for them during the policy learning step.
         for p in q_params:
             p.requires_grad = False
@@ -271,9 +274,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # Unfreeze Q-networks so you can optimize it at next DDPG step.
         for p in q_params:
             p.requires_grad = True
-
-        # TODO this is only here for debugging. Update() right now doesn't regard update intervals
-        compute_loss_info(data)
 
         # Record things
         logger.store(LossPi=loss_pi.item(), **pi_info)
@@ -354,11 +354,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
             # Record things
             logger.store(LossQ=loss_q.item(), **q_info)
-            
+
             # different update intervals for the critic, the actor and the info-objective
             if t % interval_max_JQ == 0:
-                # TODO Implement JQ
-                print("Maximize JQ")
+                update_actor(data=batch)
 
             if t % interval_max_JINFO == 0:
                 # TODO Implement JInfo
