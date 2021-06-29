@@ -259,6 +259,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # TODO this is only here for debugging. Update() right now doesn't regard update intervals
         compute_loss_info(data)
 
+    def update_critics(data):
+        # First run one gradient descent step for Q1 and Q2
+        q_optimizer.zero_grad()
+        loss_q, q_info = compute_loss_q(data)
+        loss_q.backward()
+        q_optimizer.step()
+
+        # Record things
+        logger.store(LossQ=loss_q.item(), **q_info)
+
     def update_actor(data):
         # Freeze Q-networks so you don't waste computational effort
         # computing gradients for them during the policy learning step.
@@ -345,15 +355,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         if t >= update_after:
             # Not using update_every from orig SAC, as Osa don't say anything about this
             batch = replay_buffer.sample_batch(batch_size)
-
-            # First run one gradient descent step for Q1 and Q2
-            q_optimizer.zero_grad()
-            loss_q, q_info = compute_loss_q(batch)
-            loss_q.backward()
-            q_optimizer.step()
-
-            # Record things
-            logger.store(LossQ=loss_q.item(), **q_info)
+            update_critics(data=batch)
 
             # different update intervals for the critic, the actor and the info-objective
             if t % interval_max_JQ == 0:
