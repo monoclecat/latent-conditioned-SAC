@@ -101,13 +101,14 @@ class MLPQFunction(nn.Module):
 class Discriminator(nn.Module):
     def __init__(self, obs_dim, act_dim, num_skills, hidden_sizes, activation):
         super().__init__()
-        self.net = mlp([obs_dim + act_dim] + list(hidden_sizes), activation, activation)
-        self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_skills), nn.Softmax())
+        self.net = mlp([obs_dim + act_dim] + list(hidden_sizes) + [num_skills], activation)  # , activation)
+        # self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_skills), nn.Softmax())
 
     def forward(self, obs, act):
         net_out = self.net(torch.cat([obs, act], dim=1))
-        disc = self.disc_layer(net_out)
-        return disc
+        return net_out
+        # disc = self.disc_layer(net_out)
+        # return disc
 
 
 class OsaSkillActorCritic(nn.Module):
