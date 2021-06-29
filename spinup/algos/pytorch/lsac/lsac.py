@@ -2,6 +2,7 @@ from copy import deepcopy
 import itertools
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.optim import Adam
 import gym
 import time
@@ -235,18 +236,32 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def compute_loss_info(data):
         o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
 
-        q1_pi = ac.q1(o, a, z)
-        q2_pi = ac.q2(o, a, z)
-        q_pi = torch.min(q1_pi, q2_pi)
+        q1_batch = ac.q1(o, a, z)
+        q2_batch = ac.q2(o, a, z)
+        q_batch = torch.min(q1_batch, q2_batch)
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
 
-        with torch.no_grad():
-            imp_weight = q_pi.exp_().sum()
-            w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
+        q1_pi = ac.q1(o, pi, z)
+        q2_pi = ac.q2(o, pi, z)
+        q_pi = torch.min(q1_pi, q2_pi)
 
-        print(".")
-        # TODO Implement info loss function
+        q_batch.exp_()
+        q_pi.exp_()
+        imp_weight = q_pi / q_batch.sum()
+        w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
+
+        if any(w_clip > 0.8):
+            # I have the suspicion that w_clip is always much below 1-clip
+            print("w_clip actually has an element greater than 1-clip!")
+
+        _, skills = np.where(z == 1)
+        logits = ac.d(obs=o, act=pi)
+
+        # TODO Cross entropy loss isn't using importance weight yet. cross_entropy() has a weight argument...
+        loss_info = F.cross_entropy(logits, torch.tensor(skills))
+
+        return loss_info
 
     # Set up optimizers for policy and q-function
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
@@ -255,9 +270,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     # Set up model saving
     logger.setup_pytorch_saver(ac)
 
-    def update(data):
-        # TODO this is only here for debugging. Update() right now doesn't regard update intervals
-        compute_loss_info(data)
 
     def update_critics(data):
         # First run one gradient descent step for Q1 and Q2
@@ -295,6 +307,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 # params, as opposed to "mul" and "add", which would make new tensors.
                 p_targ.data.mul_(polyak)
                 p_targ.data.add_((1 - polyak) * p.data)
+
+    def update_J_info(data):
+        # TODO In this function the loss function is called and the network weights updated
+        compute_loss_info(data)
+
 
     def get_action(o, skills, deterministic=False):
         return ac.act(torch.cat([torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32)]),
@@ -362,8 +379,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 update_actor(data=batch)
 
             if t % interval_max_JINFO == 0:
-                # TODO Implement JInfo
-                print("Maximize JInfo")
+                update_J_info(data=batch)
 
         # Update handling
         # if t >= update_after and t % update_every == 0:
