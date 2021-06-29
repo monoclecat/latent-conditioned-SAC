@@ -256,14 +256,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     logger.setup_pytorch_saver(ac)
 
     def update(data):
-        # First run one gradient descent step for Q1 and Q2
-        q_optimizer.zero_grad()
-        loss_q, q_info = compute_loss_q(data)
-        loss_q.backward()
-        q_optimizer.step()
-
-        # Record things
-        logger.store(LossQ=loss_q.item(), **q_info)
 
         # Freeze Q-networks so you don't waste computational effort 
         # computing gradients for them during the policy learning step.
@@ -351,6 +343,18 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             skills[np.random.randint(num_skills)] = True
 
         if t >= update_after:
+            # Not using update_every from orig SAC, as Osa don't say anything about this
+            batch = replay_buffer.sample_batch(batch_size)
+
+            # First run one gradient descent step for Q1 and Q2
+            q_optimizer.zero_grad()
+            loss_q, q_info = compute_loss_q(batch)
+            loss_q.backward()
+            q_optimizer.step()
+
+            # Record things
+            logger.store(LossQ=loss_q.item(), **q_info)
+            
             # different update intervals for the critic, the actor and the info-objective
             if t % interval_max_JQ == 0:
                 # TODO Implement JQ
@@ -361,10 +365,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 print("Maximize JInfo")
 
         # Update handling
-        if t >= update_after and t % update_every == 0:
-            for j in range(update_every):
-                batch = replay_buffer.sample_batch(batch_size)
-                update(data=batch)
+        # if t >= update_after and t % update_every == 0:
+            # for j in range(update_every):
+                # batch = replay_buffer.sample_batch(batch_size)
+                # update(data=batch)
 
         # End of epoch handling
         if (t+1) % steps_per_epoch == 0:
