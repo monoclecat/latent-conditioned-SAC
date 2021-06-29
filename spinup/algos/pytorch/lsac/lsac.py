@@ -251,7 +251,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         imp_weight = q_pi / q_batch.sum()
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-        if any(w_clip > 0.8):
+        if any(w_clip > 1-clip):
             # I have the suspicion that w_clip is always much below 1-clip
             print("w_clip actually has an element greater than 1-clip!")
 
