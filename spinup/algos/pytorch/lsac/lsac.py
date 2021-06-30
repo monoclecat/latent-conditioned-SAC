@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
+from torch.utils.tensorboard import SummaryWriter
 import gym
 import time
 import spinup.algos.pytorch.lsac.core as core
@@ -159,6 +160,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
+    writer = SummaryWriter()  # Make sure that current working dir is pr_versatile_skill_learning
+    # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -249,6 +252,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q_batch.exp_()
         q_pi.exp_()
         imp_weight = q_pi / q_batch.sum()
+
+        # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
+
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
         _, skills = np.where(z == 1)
@@ -269,7 +275,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     # Set up model saving
     logger.setup_pytorch_saver(ac)
 
-
     def update_critics(data):
         # First run one gradient descent step for Q1 and Q2
         q_optimizer.zero_grad()
@@ -278,6 +283,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q_optimizer.step()
 
         # Record things
+        writer.add_scalar("Loss/Q", loss_q.item(), t)
         logger.store(LossQ=loss_q.item(), **q_info)
 
     def update_actor(data):
@@ -297,6 +303,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             p.requires_grad = True
 
         # Record things
+        writer.add_scalar("Loss/Pi", loss_pi.item(), t)
         logger.store(LossPi=loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
@@ -308,12 +315,15 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 p_targ.data.add_((1 - polyak) * p.data)
 
     def update_J_info(data):
+        # TODO J_info also needs to update the weights of Pi
         d_optimizer.zero_grad()
-        loss_d = compute_loss_info(data)
-        loss_d.backward()
+        loss_J_info = compute_loss_info(data)
+        loss_J_info.backward()
         d_optimizer.step()
 
-        logger.store(LossD=loss_d.item())
+        # Record things
+        writer.add_scalar("Loss/J_info", loss_J_info.item(), t)
+        logger.store(LossD=loss_J_info.item())
 
     def get_action(o, skills, deterministic=False):
         return ac.act(torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32),
@@ -346,7 +356,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 ep_len_s.append(ep_len)
             ep_ret_a.append(ep_ret_s)
             ep_len_a.append(ep_len_s)
-            logger.store(TestEpRet=ep_ret_s, TestEpLen=ep_len_s, TestEpSkill=i)
+            writer.add_scalar(f"TestSkills/AvgEpReturn/{i+1}", np.mean(ep_ret_s), epoch)
+            writer.add_scalar(f"TestSkills/AvgEpLength/{i+1}", np.mean(ep_len_s), epoch)
+            # logger.store(**{f"TestEpRet-Skill{i+1}": ep_ret_s}, **{f"TestEpLen-Skill{i+1}": ep_len_s})
         return ep_ret_a, ep_len_a
 
     # Prepare for interaction with environment
@@ -386,6 +398,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
+            writer.add_scalar("EpReturn", ep_ret, t//max_ep_len)
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
@@ -413,6 +426,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # End of epoch handling
         if (t+1) % steps_per_epoch == 0:
             epoch = (t+1) // steps_per_epoch
+            writer.flush()
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs):
@@ -424,9 +438,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('TestEpRet', with_min_and_max=True)
             logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('TestEpLen', average_only=True)
+            # for i in range(num_skills):
+            #     logger.log_tabular(f"TestEpRet-Skill{i+1}", with_min_and_max=True)
+            #     logger.log_tabular(f"TestEpLen-Skill{i+1}", average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
             logger.log_tabular('Q1Vals', with_min_and_max=True)
             logger.log_tabular('Q2Vals', with_min_and_max=True)
@@ -435,6 +450,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.log_tabular('LossQ', average_only=True)
             logger.log_tabular('Time', time.time()-start_time)
             logger.dump_tabular()
+    writer.close()
 
 if __name__ == '__main__':
     import argparse
