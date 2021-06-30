@@ -251,10 +251,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         imp_weight = q_pi / q_batch.sum()
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-        if any(w_clip > 1-clip):
-            # I have the suspicion that w_clip is always much below 1-clip
-            print("w_clip actually has an element greater than 1-clip!")
-
         _, skills = np.where(z == 1)
         logits = ac.d(obs=o, act=pi)
 
@@ -320,7 +316,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         logger.store(LossD=loss_d.item())
 
     def get_action(o, skills, deterministic=False):
-        return ac.act(torch.cat([torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32)]),
+        return ac.act(torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32),
                       deterministic)
 
     def test_agent():
@@ -332,6 +328,26 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 ep_ret += r
                 ep_len += 1
             logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
+
+    def test_skills():
+        ep_ret_a, ep_len_a = ([] for _ in range(2))
+        for i in range(num_skills):
+            ep_ret_s, ep_len_s = ([] for _ in range(2))
+            skill_one_hot = np.zeros(num_skills)
+            skill_one_hot[i] = 1
+            for j in range(num_test_episodes):
+                o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
+                while not(d or (ep_len == max_ep_len)):
+                    # Take deterministic actions at test time
+                    o, r, d, _ = test_env.step(get_action(o, skill_one_hot, deterministic=True))
+                    ep_ret += r
+                    ep_len += 1
+                ep_ret_s.append(ep_ret)
+                ep_len_s.append(ep_len)
+            ep_ret_a.append(ep_ret_s)
+            ep_len_a.append(ep_len_s)
+            logger.store(TestEpRet=ep_ret_s, TestEpLen=ep_len_s, TestEpSkill=i)
+        return ep_ret_a, ep_len_a
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
@@ -403,7 +419,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 logger.save_state({'env': env}, None)
 
             # Test the performance of the deterministic version of the agent.
-            test_agent()
+            test_skills()
 
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)

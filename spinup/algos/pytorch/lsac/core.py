@@ -44,7 +44,7 @@ class SquashedGaussianMLPActor(nn.Module):
         self.act_limit = act_limit
 
     def forward(self, obs, skill, deterministic=False, with_logprob=True):
-        net_out = self.net(torch.cat((obs, skill), dim=1))
+        net_out = self.net(torch.cat((obs, skill), dim=-1))
         # skill_out = self.skillLayer(skill)
         # net_out = self.skillObsActLayer(torch.cat((obs, skill_out), dim=1))
 
@@ -127,7 +127,7 @@ class OsaSkillActorCritic(nn.Module):
         self.q1 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
 
-    def act(self, obs, deterministic=False):
+    def act(self, obs, skill, deterministic=False):
         with torch.no_grad():
-            a, _ = self.pi(obs, deterministic, False)
+            a, _ = self.pi(obs, skill, deterministic, False)
             return a.numpy()
