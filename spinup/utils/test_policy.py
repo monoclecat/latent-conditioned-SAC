@@ -8,7 +8,7 @@ from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
 
 
-def load_policy_and_env(fpath, itr='last', deterministic=False):
+def load_policy_and_env(fpath, itr='last', deterministic=False, skill=None):
     """
     Load a policy from save, whether it's TF or PyTorch, along with RL env.
 
@@ -18,6 +18,9 @@ def load_policy_and_env(fpath, itr='last', deterministic=False):
     Checks to see if there's a tf1_save folder. If yes, assumes the model
     is tensorflow and loads it that way. Otherwise, loads as if there's a 
     PyTorch save.
+
+    :arg skill If policy is conditioned on a one-hot-encoded skill, enter the number of the skill. The number of skills
+    is printed when calling the function, so it is safe to first run test_policy with no skill.
     """
 
     # determine if tf save or pytorch save
@@ -51,7 +54,7 @@ def load_policy_and_env(fpath, itr='last', deterministic=False):
     if backend == 'tf1':
         get_action = load_tf_policy(fpath, itr, deterministic)
     else:
-        get_action = load_pytorch_policy(fpath, itr, deterministic)
+        get_action = load_pytorch_policy(fpath, itr, deterministic, skill)
 
     # try to load environment from save
     # (sometimes this will fail because the environment could not be pickled)
@@ -89,7 +92,7 @@ def load_tf_policy(fpath, itr, deterministic=False):
     return get_action
 
 
-def load_pytorch_policy(fpath, itr, deterministic=False):
+def load_pytorch_policy(fpath, itr, deterministic=False, active_skill=None):
     """ Load a pytorch policy saved with Spinning Up Logger."""
     
     fname = osp.join(fpath, 'pyt_save', 'model'+itr+'.pt')
@@ -97,12 +100,27 @@ def load_pytorch_policy(fpath, itr, deterministic=False):
 
     model = torch.load(fname)
 
-    # make function for producing an action given a single state
-    def get_action(x):
-        with torch.no_grad():
-            x = torch.as_tensor(x, dtype=torch.float32)
-            action = model.act(x)
-        return action
+    if hasattr(model, 'num_skills'):
+        num_skills = model.num_skills()
+        assert active_skill is not None and (0 < active_skill <= num_skills), \
+            f"The loaded model knows {num_skills} different skills. Please provide a skill flag between 1 and " \
+            f"{num_skills}. You entered: {active_skill}."
+
+        print(f"Active skill is {active_skill}")
+
+        def get_action(x):
+            with torch.no_grad():
+                x = torch.as_tensor(x, dtype=torch.float32)
+                skill = torch.zeros(num_skills)
+                skill[active_skill-1] = True
+                action = model.act(x, skill, deterministic)
+            return action
+    else:
+        def get_action(x):
+            with torch.no_grad():
+                x = torch.as_tensor(x, dtype=torch.float32)
+                action = model.act(x, deterministic)
+            return action
 
     return get_action
 
@@ -116,10 +134,15 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
 
     logger = EpochLogger()
     o, r, d, ep_ret, ep_len, n = env.reset(), 0, False, 0, 0, 0
+
+    start_paused = True
     while n < num_episodes:
         if render:
             env.render()
             time.sleep(1e-3)
+        if start_paused:
+            input("Press ENTER to start")
+            start_paused = False
 
         a = get_action(o)
         o, r, d, _ = env.step(a)
@@ -146,8 +169,10 @@ if __name__ == '__main__':
     parser.add_argument('--norender', '-nr', action='store_true')
     parser.add_argument('--itr', '-i', type=int, default=-1)
     parser.add_argument('--deterministic', '-d', action='store_true')
+    parser.add_argument('--skill', '-s', type=int, default=None)
     args = parser.parse_args()
     env, get_action = load_policy_and_env(args.fpath, 
                                           args.itr if args.itr >=0 else 'last',
-                                          args.deterministic)
+                                          args.deterministic,
+                                          args.skill)
     run_policy(env, get_action, args.len, args.episodes, not(args.norender))

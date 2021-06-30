@@ -121,11 +121,16 @@ class OsaSkillActorCritic(nn.Module):
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
+        self._num_skills = num_skills
+
         # build policy and value functions
         self.pi = SquashedGaussianMLPActor(obs_dim, num_skills, act_dim, hidden_sizes, activation, act_limit)
         self.d = Discriminator(obs_dim, act_dim, num_skills, hidden_sizes, activation)
         self.q1 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
         self.q2 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
+
+    def num_skills(self):
+        return self._num_skills
 
     def act(self, obs, skill, deterministic=False):
         with torch.no_grad():
