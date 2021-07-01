@@ -268,9 +268,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # TODO Cross entropy loss isn't using importance weight yet.
         #  But should work well without clipping (see fig. 17)
         #  Maybe elementwise mult. of imp. weight with the discriminator output?
-        loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='mean')
+        #  But scaling logits by a constant doesn't make sense, does it?
+        #  logits.mul_(w_clip.unsqueeze(dim=1))
+        #  Scaling the loss seems right: We calculate the loss of the discriminator and scale the losses.
+        #  Losses with exceptionally high Q(s,a,z) should be increased, the rest decreased.
+        #  This way, promising state-action pairs have a higher impact on the network weights.
 
-        return loss_info
+        loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
+        writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
+        loss_info.mul_(w_clip)
+
+        return loss_info.mean()
 
     # Set up optimizers for policy, q-function and discriminator
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
@@ -313,11 +321,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 p_targ.data.add_((1 - polyak) * p.data)
 
     def update_J_info(data):
-        # TODO J_info also needs to update the weights of Pi
         d_optimizer.zero_grad()
+        pi_optimizer.zero_grad()
         loss_J_info = compute_loss_info(data)
         loss_J_info.backward()
         d_optimizer.step()
+        pi_optimizer.step()
 
         # Record things
         writer.add_scalar("Loss/J_info", loss_J_info.item(), t)
