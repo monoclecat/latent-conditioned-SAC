@@ -7,6 +7,7 @@ import gym
 import time
 import spinup.algos.pytorch.sac.core as core
 from spinup.utils.logx import EpochLogger
+from torch.utils.tensorboard import SummaryWriter
 
 
 class ReplayBuffer:
@@ -146,6 +147,9 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
+    writer = SummaryWriter(comment=logger_kwargs.get('exp_name'))
+    # Make sure that current working dir is pr_versatile_skill_learning
+    # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -235,6 +239,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         q_optimizer.step()
 
         # Record things
+        writer.add_scalar("Loss/Q", loss_q.item(), t)
         logger.store(LossQ=loss_q.item(), **q_info)
 
         # Freeze Q-networks so you don't waste computational effort 
@@ -253,6 +258,9 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             p.requires_grad = True
 
         # Record things
+        writer.add_scalar("Loss/Pi", loss_pi.item(), t)
+        writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
+        writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
         logger.store(LossPi=loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
@@ -312,6 +320,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
+            writer.add_scalar("EpReturn", ep_ret, t//max_ep_len)
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
@@ -346,6 +355,8 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             logger.log_tabular('LossQ', average_only=True)
             logger.log_tabular('Time', time.time()-start_time)
             logger.dump_tabular()
+    writer.flush()
+    writer.close()
 
 if __name__ == '__main__':
     import argparse
