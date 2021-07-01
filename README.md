@@ -23,6 +23,8 @@ To run, first make sure the root of this repository is on your PYTHONPATH. Add i
 export PYTHONPATH="${PYTHONPATH}:~/.../pr_versatile_skill_learning"
 cd ~/.../pr_versatile_skill_learning
 python -m spinup.run lsac --env HalfCheetah-v2  --exp_name LSAC-Cheetah
+# or
+python -m spinup.algos.pytorch.lsac.lsac --env HalfCheetah-v2  --exp_name LSAC-Cheetah
 ```
 
 The LSAC algorithm also logs to Tensorboard files. These are placed in the `runs/` directory of your current working 
@@ -37,8 +39,8 @@ tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 Trained models are saved in the `data/` directory at the base of this repository. 
 The following is an example of how to run one. 
 ```bash
-python -m spinup.utils.test_policy data/lsac/lsac_s0 --skill 1  
-# or
 python -m spinup.run test_policy data/lsac/lsac_s0 --skill 1
+# or
+python -m spinup.utils.test_policy data/lsac/lsac_s0 --skill 1  
 ```
 
