@@ -254,8 +254,13 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         imp_weight = q_pi / q_batch.sum()
 
         # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
+        writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
+        writer.add_scalar("ImportanceWeights/Avg/Unclipped", torch.mean(imp_weight), t)
 
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
+
+        writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
+        writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
 
         _, skills = np.where(z == 1)
         logits = ac.d(obs=o, act=pi)
@@ -295,6 +300,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         # Record things
         writer.add_scalar("Loss/Pi", loss_pi.item(), t)
+        writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
+        writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
         logger.store(LossPi=loss_pi.item(), **pi_info)
 
         # Finally, update target networks by polyak averaging.
@@ -430,7 +437,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # End of epoch handling
         if (t+1) % steps_per_epoch == 0:
             epoch = (t+1) // steps_per_epoch
-            writer.flush()
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs):
@@ -454,6 +460,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.log_tabular('LossQ', average_only=True)
             logger.log_tabular('Time', time.time()-start_time)
             logger.dump_tabular()
+    writer.flush()
     writer.close()
 
 if __name__ == '__main__':
