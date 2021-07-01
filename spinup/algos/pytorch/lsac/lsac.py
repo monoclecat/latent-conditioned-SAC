@@ -287,20 +287,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         logger.store(LossQ=loss_q.item(), **q_info)
 
     def update_actor(data):
-        # Freeze Q-networks so you don't waste computational effort
-        # computing gradients for them during the policy learning step.
-        for p in q_params:
-            p.requires_grad = False
-
-        # Next run one gradient descent step for pi.
+        # Run one gradient descent step for pi.
         pi_optimizer.zero_grad()
         loss_pi, pi_info = compute_loss_pi(data)
         loss_pi.backward()
         pi_optimizer.step()
-
-        # Unfreeze Q-networks so you can optimize it at next DDPG step.
-        for p in q_params:
-            p.requires_grad = True
 
         # Record things
         writer.add_scalar("Loss/Pi", loss_pi.item(), t)
@@ -410,12 +401,25 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             batch = replay_buffer.sample_batch(batch_size)
             update_critics(data=batch)
 
-            # different update intervals for the critic, the actor and the info-objective
-            if t % interval_max_JQ == 0:
-                update_actor(data=batch)
+            update_JQ = t % interval_max_JQ == 0
+            update_JINFO = t % interval_max_JINFO == 0
 
-            if t % interval_max_JINFO == 0:
+            if update_JQ or update_JINFO:
+                # Freeze Q-networks so you don't waste computational effort
+                # computing gradients for them during the policy learning step.
+                for p in q_params:
+                    p.requires_grad = False
+
+            # different update intervals for the critic, the actor and the info-objective
+            if update_JQ:
+                update_actor(data=batch)
+            if update_JINFO:
                 update_J_info(data=batch)
+
+            if update_JQ or update_JINFO:
+                # Unfreeze Q-networks so you can optimize it at next DDPG step.
+                for p in q_params:
+                    p.requires_grad = True
 
         # Update handling
         # if t >= update_after and t % update_every == 0:
