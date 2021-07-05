@@ -224,9 +224,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def compute_loss_pi(data):
         o, z = data['obs'], data['skill']
         pi, logp_pi = ac.pi(o, z)
-        q1_pi = ac.q1(o, pi, z)
-        q2_pi = ac.q2(o, pi, z)
-        q_pi = torch.min(q1_pi, q2_pi)
+        with torch.no_grad():
+            q1_pi = ac.q1(o, pi, z)
+            q2_pi = ac.q2(o, pi, z)
+            q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
         loss_pi = (alpha * logp_pi - q_pi).mean()
