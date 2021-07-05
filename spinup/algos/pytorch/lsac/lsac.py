@@ -246,23 +246,22 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
 
-        with torch.no_grad():
-            q1_pi = ac.q1(o, pi, z)
-            q2_pi = ac.q2(o, pi, z)
-            q_pi = torch.min(q1_pi, q2_pi)
+        q1_pi = ac.q1(o, pi, z)
+        q2_pi = ac.q2(o, pi, z)
+        q_pi = torch.min(q1_pi, q2_pi)
 
-            q_batch.exp_()
-            q_pi.exp_()
-            imp_weight = q_pi / q_batch.sum()
+        q_batch.exp_()
+        q_pi.exp_()
+        imp_weight = q_pi / q_batch.sum()
 
-            # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
-            writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
-            writer.add_scalar("ImportanceWeights/Avg/Unclipped", torch.mean(imp_weight), t)
+        # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
+        writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
+        writer.add_scalar("ImportanceWeights/Avg/Unclipped", torch.mean(imp_weight), t)
 
-            w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
+        w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-            writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
-            writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
+        writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
+        writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
 
         _, skills = np.where(z == 1)
         logits = ac.d(obs=o, act=pi)
