@@ -3,7 +3,7 @@ experiments/
 __pycache__/
 *.pkl
 data/
-runs/
+runs*/
 **/*.egg-info
 .python-version
 .idea/
