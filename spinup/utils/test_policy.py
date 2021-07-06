@@ -4,6 +4,7 @@ import os
 import os.path as osp
 import tensorflow as tf
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
 
@@ -108,15 +109,18 @@ def load_pytorch_policy(fpath, itr, deterministic=False, active_skill=None):
 
         print(f"Active skill is {active_skill}")
 
-        def get_action(x):
+        def get_action(x, writer: SummaryWriter, t):
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 skill = torch.zeros(num_skills)
                 skill[active_skill-1] = True
                 action = model.act(x, skill, deterministic)
+                pred_skill = model.d(x, torch.as_tensor(action)).softmax(dim=-1)
+                writer.add_scalars(f"PredSkill/(active_skill={active_skill})",
+                                   {str(x): y for x, y in enumerate(pred_skill)}, t)
             return action
     else:
-        def get_action(x):
+        def get_action(x, writer, t):
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, deterministic)
@@ -133,9 +137,11 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
         "page on Experiment Outputs for how to handle this situation."
 
     logger = EpochLogger()
+    writer = SummaryWriter(comment="test_policy")
     o, r, d, ep_ret, ep_len, n = env.reset(), 0, False, 0, 0, 0
+    t = 0
 
-    start_paused = True
+    start_paused = render
     while n < num_episodes:
         if render:
             env.render()
@@ -144,10 +150,11 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
             input("Press ENTER to start")
             start_paused = False
 
-        a = get_action(o)
+        a = get_action(o, writer, t)
         o, r, d, _ = env.step(a)
         ep_ret += r
         ep_len += 1
+        t += 1
 
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
@@ -158,6 +165,8 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
     logger.log_tabular('EpRet', with_min_and_max=True)
     logger.log_tabular('EpLen', average_only=True)
     logger.dump_tabular()
+    writer.flush()
+    writer.close()
 
 
 if __name__ == '__main__':
