@@ -51,8 +51,8 @@ class ReplayBuffer:
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
-        polyak=0.995, lr=1e-4, alpha=0.2, batch_size=256, start_steps=10000,
-        update_after=1, update_every=50, num_test_episodes=10, max_ep_len=1000,
+        polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
+        update_after=512, num_test_episodes=10, max_ep_len=1000,
         logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
@@ -174,7 +174,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic(env.observation_space, env.action_space, num_skills, **ac_kwargs)
+    ac = actor_critic# (env.observation_space, env.action_space, num_skills, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -490,6 +490,10 @@ if __name__ == '__main__':
 
     torch.set_num_threads(torch.get_num_threads())
 
-    lsac(lambda: gym.make(args.env), actor_critic=core.OsaSkillActorCritic,
-         ac_kwargs=dict(hidden_sizes=[args.hid] * args.l), seed=args.seed, epochs=args.epochs, gamma=args.gamma,
+    # ac = torch.load("data/NaN_investigation_Hopper_cont_from_checkpoint/NaN_investigation_Hopper_cont_from_checkpoint_s0/pyt_save/model.pt")
+    ac = core.OsaSkillActorCritic
+
+    lsac(lambda: gym.make(args.env), actor_critic=ac,
+         # ac_kwargs=dict(hidden_sizes=[args.hid] * args.l), gamma=args.gamma,
+         seed=args.seed, epochs=args.epochs,
          logger_kwargs=logger_kwargs)
