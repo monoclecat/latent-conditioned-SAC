@@ -160,7 +160,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
-    writer = SummaryWriter()  # Make sure that current working dir is pr_versatile_skill_learning
+    writer = SummaryWriter(comment=logger_kwargs.get('exp_name'))
+    # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
     torch.manual_seed(seed)
@@ -174,7 +175,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic# (env.observation_space, env.action_space, num_skills, **ac_kwargs)
+    ac = actor_critic(env.observation_space, env.action_space, num_skills, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -215,6 +216,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
+        writer.add_scalar("Q_Values/Q1_mean", q1.detach().mean(), t)
+        writer.add_scalar("Q_Values/Q2_mean", q2.detach().mean(), t)
         q_info = dict(Q1Vals=q1.detach().numpy(),
                       Q2Vals=q2.detach().numpy())
 
@@ -252,7 +255,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         q_batch.exp_()
         q_pi.exp_()
-        imp_weight = q_pi / q_batch.sum()
+        imp_weight = q_pi / (q_batch.sum() + 1e-4)
+        writer.add_scalar("ImportanceWeights/q_pi_exp/Avg", q_pi.mean(), t)
+        writer.add_scalar("ImportanceWeights/q_pi_exp/Max", q_pi.max(), t)
+        writer.add_scalar("ImportanceWeights/q_batch_sum", q_batch.sum(), t)
 
         # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
         writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
@@ -297,6 +303,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q_optimizer.step()
 
         # Record things
+        # q1_param = torch.cat([x[0].detach().flatten() for x in ac.q1.parameters()])
+        # writer.add_scalar("Weights/Q1_param_mean", q1_param.mean(), t)
+        # writer.add_scalar("Weights/Q1_param_max", q1_param.max(), t)
+        # writer.add_scalar("Weights/Q1_param_min", q1_param.min(), t)
+        # q2_param = torch.cat([x[0].detach().flatten() for x in ac.q2.parameters()])
+        # writer.add_scalar("Weights/Q2_param_mean", q2_param.mean(), t)
+        # writer.add_scalar("Weights/Q2_param_max", q2_param.max(), t)
+        # writer.add_scalar("Weights/Q2_param_min", q2_param.min(), t)
         writer.add_scalar("Loss/Q", loss_q.item(), t)
         logger.store(LossQ=loss_q.item(), **q_info)
 
@@ -307,7 +321,13 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_pi.backward()
         pi_optimizer.step()
 
+        # if any([torch.isnan(x[0]).any() for x in ac.parameters()]):
+            # print("stop")
         # Record things
+        pi_param = torch.cat([x[0].detach().flatten() for x in ac.pi.parameters()])
+        # writer.add_scalar("Weights/Pi_param_mean", pi_param.mean(), t)
+        # writer.add_scalar("Weights/Pi_param_max", pi_param.max(), t)
+        # writer.add_scalar("Weights/Pi_param_min", pi_param.min(), t)
         writer.add_scalar("Loss/Pi", loss_pi.item(), t)
         writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
         writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
@@ -329,7 +349,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         d_optimizer.step()
         pi_optimizer.step()
 
+        # if any([torch.isnan(x[0]).any() for x in ac.parameters()]):
+            # print("stop")
+
         # Record things
+        # d_param = torch.cat([x[0].detach().flatten() for x in ac.d.parameters()])
+        # writer.add_scalar("Weights/D_param_mean", d_param.mean(), t)
+        # writer.add_scalar("Weights/D_param_max", d_param.max(), t)
+        # writer.add_scalar("Weights/D_param_min", d_param.min(), t)
         writer.add_scalar("Loss/J_info", loss_J_info.item(), t)
         logger.store(LossD=loss_J_info.item())
 
@@ -407,6 +434,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
             writer.add_scalar("EpReturn", ep_ret, t//max_ep_len)
+            writer.add_scalar("EpLen", ep_len, t//max_ep_len)
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
@@ -477,9 +505,9 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
-    parser.add_argument('--hid', type=int, default=256)
-    parser.add_argument('--l', type=int, default=2)
-    parser.add_argument('--gamma', type=float, default=0.99)
+    # parser.add_argument('--hid', type=int, default=256)
+    # parser.add_argument('--l', type=int, default=2)
+    # parser.add_argument('--gamma', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='lsac')
