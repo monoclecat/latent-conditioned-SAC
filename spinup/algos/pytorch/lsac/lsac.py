@@ -276,22 +276,22 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         # TODO wrote own cross Entropy loss with weights - check if correct
         # Using hot-one-encoded skill vector instead of the skill index 
-        
-        # _, skills = np.where(z == 1)
-        # loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
-        # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
-        # loss_info.mul_(w_clip)
 
-        loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
+        _, skills = np.where(z == 1)
+        loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
+        writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
+        loss_info.mul_(w_clip)
+
+        # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
 
         return loss_info.mean()
 
-    def computeCrossEntropyLoss(logits, target, weights):
-        # Based on https://ml-cheatsheet.readthedocs.io/en/latest/loss_functions.html
-        log_logits = torch.log(logits)
-        target.mul_(log_logits)
-        cross_loss = -target.sum(dim=1)
-        return cross_loss.mul_(weights)
+    # def computeCrossEntropyLoss(logits, target, weights):
+    #     # Based on https://ml-cheatsheet.readthedocs.io/en/latest/loss_functions.html
+    #     log_logits = torch.log(logits)
+    #     target.mul_(log_logits)
+    #     cross_loss = -target.sum(dim=1)
+    #     return cross_loss.mul_(weights)
 
     # Set up optimizers for policy, q-function and discriminator
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
