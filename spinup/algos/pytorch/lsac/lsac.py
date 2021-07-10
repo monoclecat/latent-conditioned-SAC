@@ -224,10 +224,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def compute_loss_pi(data):
         o, z = data['obs'], data['skill']
         pi, logp_pi = ac.pi(o, z)
-        with torch.no_grad():
-            q1_pi = ac.q1(o, pi, z)
-            q2_pi = ac.q2(o, pi, z)
-            q_pi = torch.min(q1_pi, q2_pi)
+        # with torch.no_grad():
+        q1_pi = ac.q1(o, pi, z)
+        q2_pi = ac.q2(o, pi, z)
+        q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
         loss_pi = (alpha * logp_pi - q_pi).mean()
@@ -242,17 +242,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         q1_batch = ac.q1(o, a, z)
         q2_batch = ac.q2(o, a, z)
-        q_batch = torch.min(q1_batch, q2_batch)
+        q_batch = torch.minimum(q1_batch, q2_batch)
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
 
         q1_pi = ac.q1(o, pi, z)
         q2_pi = ac.q2(o, pi, z)
-        q_pi = torch.min(q1_pi, q2_pi)
+        q_pi = torch.minimum(q1_pi, q2_pi)
 
         q_batch.exp_()
         q_pi.exp_()
-        imp_weight = q_pi / q_batch.sum()
+        imp_weight = torch.div(q_pi,q_batch.sum())
 
         # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
         writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
