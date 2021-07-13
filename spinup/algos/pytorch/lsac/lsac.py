@@ -160,14 +160,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
-    writer = SummaryWriter(comment=logger_kwargs.get('exp_name'))
-    # Make sure that current working dir is pr_versatile_skill_learning
-    # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     env, test_env = env_fn(), env_fn()
+    env_name = env.spec.id
+    writer = SummaryWriter(comment=f"_{env_name}_{logger_kwargs.get('exp_name')}")
+    # Make sure that current working dir is pr_versatile_skill_learning
+    # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
+
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
 
@@ -424,8 +426,19 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         else:
             a = env.action_space.sample()
 
-        # Step the env
-        o2, r, d, _ = env.step(a)
+        # Step the env.
+        if env_name == "Hopper-v2":
+            # Modification to reward according to Osa et al.
+            posbefore = env.sim.data.qpos[0]
+            o2, _, d, _ = env.step(a)
+            posafter, height, ang = env.sim.data.qpos[0:3]
+            alive_bonus = 1.0
+            r = min((posafter - posbefore) / env.dt, 1)
+            r += alive_bonus
+            r -= 1e-3 * np.square(a).sum()
+        else:
+            o2, r, d, _ = env.step(a)
+
         ep_ret += r
         ep_len += 1
 
