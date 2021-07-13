@@ -245,17 +245,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         q1_batch = ac.q1(o, a, z)
         q2_batch = ac.q2(o, a, z)
-        q_batch = torch.min(q1_batch, q2_batch)
+        q_batch = torch.minimum(q1_batch, q2_batch)
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
 
         q1_pi = ac.q1(o, pi, z)
         q2_pi = ac.q2(o, pi, z)
-        q_pi = torch.min(q1_pi, q2_pi)
+        q_pi = torch.minimum(q1_pi, q2_pi)
 
         q_batch.exp_()
         q_pi.exp_()
-        imp_weight = q_pi / (q_batch.sum() + 1e-4)
+        imp_weight = torch.div(q_pi, q_batch.sum())
         writer.add_scalar("ImportanceWeights/q_pi_exp/Avg", q_pi.mean(), t)
         writer.add_scalar("ImportanceWeights/q_pi_exp/Max", q_pi.max(), t)
         writer.add_scalar("ImportanceWeights/q_batch_sum", q_batch.sum(), t)
@@ -269,7 +269,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
         writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
 
-        _, skills = np.where(z == 1)
         logits = ac.d(obs=o, act=pi)
 
         # TODO Cross entropy loss isn't using importance weight yet.
@@ -281,11 +280,24 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         #  Losses with exceptionally high Q(s,a,z) should be increased, the rest decreased.
         #  This way, promising state-action pairs have a higher impact on the network weights.
 
+        # TODO wrote own cross Entropy loss with weights - check if correct
+        # Using hot-one-encoded skill vector instead of the skill index 
+
+        _, skills = np.where(z == 1)
         loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
         writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
         loss_info.mul_(w_clip)
 
+        # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
+
         return loss_info.mean()
+
+    # def computeCrossEntropyLoss(logits, target, weights):
+    #     # Based on https://ml-cheatsheet.readthedocs.io/en/latest/loss_functions.html
+    #     log_logits = torch.log(logits)
+    #     target.mul_(log_logits)
+    #     cross_loss = -target.sum(dim=1)
+    #     return cross_loss.mul_(weights)
 
     # Set up optimizers for policy, q-function and discriminator
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
@@ -321,10 +333,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_pi.backward()
         pi_optimizer.step()
 
-        # if any([torch.isnan(x[0]).any() for x in ac.parameters()]):
-            # print("stop")
         # Record things
-        pi_param = torch.cat([x[0].detach().flatten() for x in ac.pi.parameters()])
+        # pi_param = torch.cat([x[0].detach().flatten() for x in ac.pi.parameters()])
         # writer.add_scalar("Weights/Pi_param_mean", pi_param.mean(), t)
         # writer.add_scalar("Weights/Pi_param_max", pi_param.max(), t)
         # writer.add_scalar("Weights/Pi_param_min", pi_param.min(), t)

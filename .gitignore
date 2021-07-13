@@ -10,3 +10,4 @@ runs*/
 .vscode/
 .DS_Store
 _build/
+.env
