@@ -9,6 +9,7 @@ import gym
 import time
 import spinup.algos.pytorch.lsac.core as core
 from spinup.utils.logx import EpochLogger
+from spinup.utils.run_utils import setup_logger_kwargs
 
 
 class ReplayBuffer:
@@ -157,16 +158,18 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
-
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
-
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     env, test_env = env_fn(), env_fn()
     env_name = env.spec.id
-    writer = SummaryWriter(comment=f"_{env_name}_{logger_kwargs.get('exp_name')}")
+
+    if len(logger_kwargs) == 0:
+        logger_kwargs = setup_logger_kwargs(f"{env_name}_{args.exp_name}", args.seed)
+    logger = EpochLogger(**logger_kwargs)
+    logger.save_config(locals())
+
+    writer = SummaryWriter(comment=f"_{env_name}_{args.exp_name}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
@@ -541,8 +544,6 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', type=str, default='lsac')
     args = parser.parse_args()
 
-    from spinup.utils.run_utils import setup_logger_kwargs
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
 
     torch.set_num_threads(torch.get_num_threads())
 
@@ -551,5 +552,4 @@ if __name__ == '__main__':
 
     lsac(lambda: gym.make(args.env), actor_critic=ac,
          # ac_kwargs=dict(hidden_sizes=[args.hid] * args.l), gamma=args.gamma,
-         seed=args.seed, epochs=args.epochs,
-         logger_kwargs=logger_kwargs)
+         seed=args.seed, epochs=args.epochs)
