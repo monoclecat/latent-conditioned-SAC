@@ -427,14 +427,19 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             a = env.action_space.sample()
 
         # Step the env.
-        if env_name == "Hopper-v2":
-            # Modification to reward according to Osa et al.
+        if env_name == "Hopper-v2" or env_name == "Walker2d-v2":
+            # Modifications to reward according to Osa et al.
             posbefore = env.sim.data.qpos[0]
             o2, _, d, _ = env.step(a)
             posafter, height, ang = env.sim.data.qpos[0:3]
-            alive_bonus = 1.0
-            r = min((posafter - posbefore) / env.dt, 1)
-            r += alive_bonus
+
+            if env_name == "Hopper-v2":
+                r = min((posafter - posbefore) / env.dt, 1)
+            else:
+                # Walker2d-v2
+                r = min((posafter - posbefore) / env.dt, 2)
+
+            r += 1.0
             r -= 1e-3 * np.square(a).sum()
         else:
             o2, r, d, _ = env.step(a)
