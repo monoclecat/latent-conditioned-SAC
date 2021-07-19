@@ -166,10 +166,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     if len(logger_kwargs) == 0:
         logger_kwargs = setup_logger_kwargs(f"{env_name}_{args.exp_name}", args.seed)
+        logger_kwargs['exp_name'] = args.exp_name
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    writer = SummaryWriter(comment=f"_{env_name}_{args.exp_name}")
+
+    writer = SummaryWriter(comment=f"_{env_name}_{logger_kwargs['exp_name']}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
