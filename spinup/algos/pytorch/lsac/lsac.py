@@ -51,7 +51,7 @@ class ReplayBuffer:
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99,
+        steps_per_epoch=20000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
         update_after=512, num_test_episodes=10, max_ep_len=1000,
         logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
@@ -234,10 +234,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def compute_loss_pi(data):
         o, z = data['obs'], data['skill']
         pi, logp_pi = ac.pi(o, z)
-        with torch.no_grad():
-            q1_pi = ac.q1(o, pi, z)
-            q2_pi = ac.q2(o, pi, z)
-            q_pi = torch.min(q1_pi, q2_pi)
+        q1_pi = ac.q1(o, pi, z)
+        q2_pi = ac.q2(o, pi, z)
+        q_pi = torch.min(q1_pi, q2_pi)
 
         # Entropy-regularized policy loss
         loss_pi = (alpha * logp_pi - q_pi).mean()
@@ -292,8 +291,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         _, skills = np.where(z == 1)
         loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
-        writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
-        loss_info.mul_(w_clip)
+        # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
+        # loss_info.mul_(w_clip)
 
         # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
 
