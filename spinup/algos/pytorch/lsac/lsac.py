@@ -252,12 +252,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q1_batch = ac.q1(o, a, z)
         q2_batch = ac.q2(o, a, z)
         q_batch = torch.minimum(q1_batch, q2_batch)
+        q_batch_max = torch.max(q_batch).detach()  # detach this so we don't run into a problem with autograd
+        q_batch -= q_batch_max
 
         pi, logp_pi = ac.pi(o, z, deterministic=True)  # deterministic because we don't want exploration noise
 
         q1_pi = ac.q1(o, pi, z)
         q2_pi = ac.q2(o, pi, z)
-        q_pi = torch.minimum(q1_pi, q2_pi)
+        q_pi = torch.minimum(q1_pi, q2_pi) - q_batch_max
 
         q_batch.exp_()
         q_pi.exp_()
@@ -292,7 +294,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         _, skills = np.where(z == 1)
         loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
         # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
-        # loss_info.mul_(w_clip)
+        loss_info.mul_(w_clip)
 
         # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
 
