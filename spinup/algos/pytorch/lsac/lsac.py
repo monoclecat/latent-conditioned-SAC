@@ -51,7 +51,7 @@ class ReplayBuffer:
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=20000, epochs=100, replay_size=int(1e6), gamma=0.99,
+        steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
         polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
         update_after=512, num_test_episodes=10,
         logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
