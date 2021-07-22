@@ -1,1 +1,13 @@
+experiments/
+*.*~
+__pycache__/
+*.pkl
+data/
+runs*/
+**/*.egg-info
+.python-version
 .idea/
+.vscode/
+.DS_Store
+_build/
+.env
