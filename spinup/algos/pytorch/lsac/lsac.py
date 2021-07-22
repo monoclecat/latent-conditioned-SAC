@@ -258,6 +258,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q1_pi = ac.q1(o, pi, z)
         q2_pi = ac.q2(o, pi, z)
         q_pi = torch.minimum(q1_pi, q2_pi) - q_batch_max
+        q_pi = torch.minimum(q_pi, torch.as_tensor(85.0))
 
         q_batch.exp_()
         q_pi.exp_()
