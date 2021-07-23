@@ -387,7 +387,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         pi_optimizer.zero_grad()
         disc_loss_J_info, cont_loss_J_info = compute_loss_info(data)
         if disc_loss_J_info is not None:
-            disc_loss_J_info.backward()
+            disc_loss_J_info.backward(retain_graph=cont_loss_J_info is not None)
             writer.add_scalar("Loss/disc_J_info", disc_loss_J_info.item(), t)
             logger.store(LossD=disc_loss_J_info.item())
         if cont_loss_J_info is not None:
