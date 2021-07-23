@@ -100,19 +100,23 @@ def load_pytorch_policy(fpath, itr, deterministic=False, active_skill=None):
     print('\n\nLoading from %s.\n\n'%fname)
 
     model = torch.load(fname)
+    num_cont_skills = 0
+    if hasattr(model, '_num_disc_skills'):
+        num_disc_skills = model.num_disc_skills()
+    else:
+        num_disc_skills = 0
 
-    if hasattr(model, 'num_skills'):
-        num_skills = model.num_skills()
-        assert active_skill is not None and (0 < active_skill <= num_skills), \
-            f"The loaded model knows {num_skills} different skills. Please provide a skill flag between 1 and " \
-            f"{num_skills}. You entered: {active_skill}."
+    if num_disc_skills > 0:
+        assert active_skill is not None and (0 < active_skill <= num_disc_skills), \
+            f"The loaded model knows {num_disc_skills} different DISCRETE skills. Please provide a skill flag between 1 and " \
+            f"{num_disc_skills}. You entered: {active_skill}."
 
         print(f"Active skill is {active_skill}")
 
         def get_action(x, writer: SummaryWriter, t):
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
-                skill = torch.zeros(num_skills)
+                skill = torch.zeros(num_disc_skills)
                 skill[active_skill-1] = True
                 action = model.act(x, skill, deterministic)
                 pred_skill = model.d(x, torch.as_tensor(action)).softmax(dim=-1)
