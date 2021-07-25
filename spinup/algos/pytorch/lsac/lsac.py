@@ -55,7 +55,7 @@ class ReplayBuffer:
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
          steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
          polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
-         update_after=512, num_test_episodes=10,
+         update_after=4096, num_test_episodes=10,
          logger_kwargs=dict(), save_freq=1, num_disc_skills=0, num_cont_skills=2,
          interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
     """
@@ -575,11 +575,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             #     logger.log_tabular(f"TestEpRet-Skill{i+1}", with_min_and_max=True)
             #     logger.log_tabular(f"TestEpLen-Skill{i+1}", average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
-            logger.log_tabular('Q1Vals', with_min_and_max=True)
-            logger.log_tabular('Q2Vals', with_min_and_max=True)
-            logger.log_tabular('LogPi', with_min_and_max=True)
-            logger.log_tabular('LossPi', average_only=True)
-            logger.log_tabular('LossQ', average_only=True)
+            if t > update_after:
+                logger.log_tabular('Q1Vals', with_min_and_max=True)
+                logger.log_tabular('Q2Vals', with_min_and_max=True)
+                logger.log_tabular('LogPi', with_min_and_max=True)
+                logger.log_tabular('LossPi', average_only=True)
+                logger.log_tabular('LossQ', average_only=True)
             logger.log_tabular('Time', time.time()-start_time)
             logger.dump_tabular()
     writer.flush()
