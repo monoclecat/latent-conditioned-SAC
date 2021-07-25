@@ -38,12 +38,13 @@ tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 ## Running a trained policy
 Trained models are saved in the `data/` directory at the base of this repository. 
 The following is an example of how to run one. 
-When training a latent-conditioned policy, make sure to add the `--skill` flag. 
+When training a latent-conditioned policy, make sure to add the `--disc_skill` and/or `--cont_skill` flag. 
 Not sure how many skills the agent has been trained on? 
 Just run the agent without specifying the skill and the error message will tell you. 
 ```bash
-python -m spinup.run test_policy data/lsac/lsac_s0 --skill 1
+# Example for an agent with discrete skills and a two-dimensional continuous skill
+python -m spinup.run test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
 # or
-python -m spinup.utils.test_policy data/lsac/lsac_s0 --skill 1  
+python -m spinup.utils.test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
 ```
 

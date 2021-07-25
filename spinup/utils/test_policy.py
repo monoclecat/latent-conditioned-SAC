@@ -9,7 +9,7 @@ from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
 
 
-def load_policy_and_env(fpath, itr='last', deterministic=False, skill=None):
+def load_policy_and_env(fpath, itr='last', deterministic=False, disc_skill=None, cont_skill=None):
     """
     Load a policy from save, whether it's TF or PyTorch, along with RL env.
 
@@ -20,8 +20,11 @@ def load_policy_and_env(fpath, itr='last', deterministic=False, skill=None):
     is tensorflow and loads it that way. Otherwise, loads as if there's a 
     PyTorch save.
 
-    :arg skill If policy is conditioned on a one-hot-encoded skill, enter the number of the skill. The number of skills
-    is printed when calling the function, so it is safe to first run test_policy with no skill.
+    :arg disc_skill If policy is conditioned on a one-hot-encoded discrete skill, enter the number of the skill.
+    The number of skills is printed when calling the function, so it is safe to first run test_policy with no skill.
+
+    :arg cont_skill If policy is condition on one or more continuous-valued skills, these are passed to this function
+    as a list of float values. Their value is best chosen between -1 and +1.
     """
 
     # determine if tf save or pytorch save
@@ -55,7 +58,7 @@ def load_policy_and_env(fpath, itr='last', deterministic=False, skill=None):
     if backend == 'tf1':
         get_action = load_tf_policy(fpath, itr, deterministic)
     else:
-        get_action = load_pytorch_policy(fpath, itr, deterministic, skill)
+        get_action = load_pytorch_policy(fpath, itr, deterministic, disc_skill, cont_skill)
 
     # try to load environment from save
     # (sometimes this will fail because the environment could not be pickled)
@@ -93,35 +96,51 @@ def load_tf_policy(fpath, itr, deterministic=False):
     return get_action
 
 
-def load_pytorch_policy(fpath, itr, deterministic=False, active_skill=None):
+def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_skill=None):
     """ Load a pytorch policy saved with Spinning Up Logger."""
     
     fname = osp.join(fpath, 'pyt_save', 'model'+itr+'.pt')
     print('\n\nLoading from %s.\n\n'%fname)
 
     model = torch.load(fname)
-    num_cont_skills = 0
     if hasattr(model, '_num_disc_skills'):
         num_disc_skills = model.num_disc_skills()
     else:
         num_disc_skills = 0
 
+    if hasattr(model, '_num_cont_skills'):
+        num_cont_skills = model.num_cont_skills()
+    else:
+        num_cont_skills = 0
+
     if num_disc_skills > 0:
-        assert active_skill is not None and (0 < active_skill <= num_disc_skills), \
-            f"The loaded model knows {num_disc_skills} different DISCRETE skills. Please provide a skill flag between 1 and " \
-            f"{num_disc_skills}. You entered: {active_skill}."
+        assert disc_skill is not None and (0 < disc_skill <= num_disc_skills), \
+            f"The loaded model knows {num_disc_skills} different DISCRETE skills. " \
+            f"Please provide the command line argument -ds with a value " \
+            f"between 1 and {num_disc_skills}. You entered: {disc_skill}."
+        print(f"Active discrete skill is {disc_skill}")
+        disc_vec = torch.zeros(num_disc_skills)
+        disc_vec[disc_skill-1] = True
 
-        print(f"Active skill is {active_skill}")
+    if num_cont_skills > 0:
+        assert cont_skill is not None and len(cont_skill) == num_cont_skills, \
+            f"The loaded model knows {num_cont_skills} different CONTINUOUS skills. " \
+            f"Please provide the command line argument -cs with {num_cont_skills} space separated float values, " \
+            f"preferably between -1 and +1 (e.g. -cs -0.5 0.6). You entered: {', '.join(str(x) for x in cont_skill)}."
+        print(f"Active continuous skill vector is {cont_skill}")
+        cont_vec = torch.as_tensor(cont_skill)
 
+    if num_disc_skills > 0 or num_cont_skills > 0:
         def get_action(x, writer: SummaryWriter, t):
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
-                skill = torch.zeros(num_disc_skills)
-                skill[active_skill-1] = True
-                action = model.act(x, skill, deterministic)
-                pred_skill = model.d(x, torch.as_tensor(action)).softmax(dim=-1)
-                writer.add_scalars(f"PredSkill/(active_skill={active_skill})",
-                                   {str(x): y for x, y in enumerate(pred_skill)}, t)
+                action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
+                pred_disc_skill, pred_cont_skill, cont_skill_var = model.d(x, torch.as_tensor(action))
+                pred_disc_skill = pred_disc_skill.softmax(dim=-1)
+                writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                   {str(x+1): y for x, y in enumerate(pred_disc_skill)}, t)
+                writer.add_scalars(f"PredContSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                   {'mu': pred_cont_skill, 'var': cont_skill_var})
             return action
     else:
         def get_action(x, writer, t):
@@ -182,10 +201,15 @@ if __name__ == '__main__':
     parser.add_argument('--norender', '-nr', action='store_true')
     parser.add_argument('--itr', '-i', type=int, default=-1)
     parser.add_argument('--deterministic', '-d', action='store_true')
-    parser.add_argument('--skill', '-s', type=int, default=None)
+    parser.add_argument('--disc-skill', '-ds', type=int, default=None,
+                        help='Set the discrete skill of the agent (one-hot-encoded latent variable vector.')
+    parser.add_argument('--cont-skill', '-cs', type=float, default=None, nargs='+',
+                        help='Set the continuous skill vector with space-separated float values between -1 and +1 '
+                             '(e.g. -cs 0.5 0.2).')
     args = parser.parse_args()
     env, get_action = load_policy_and_env(args.fpath, 
                                           args.itr if args.itr >=0 else 'last',
                                           args.deterministic,
-                                          args.skill)
+                                          args.disc_skill,
+                                          args.cont_skill)
     run_policy(env, get_action, args.len, args.episodes, not(args.norender))

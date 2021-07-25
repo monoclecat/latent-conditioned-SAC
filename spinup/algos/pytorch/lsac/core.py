@@ -164,7 +164,7 @@ class OsaSkillActorCritic(nn.Module):
         return self._num_disc_skills
 
     def num_cont_skills(self):
-        return self._num_disc_skills
+        return self._num_cont_skills
 
     def act(self, obs, skill, deterministic=False):
         with torch.no_grad():
