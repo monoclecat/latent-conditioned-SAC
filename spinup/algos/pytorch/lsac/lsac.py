@@ -164,6 +164,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
+    max_z_pos = 0.0
+    min_z_pos = 0.0
     if directed:
         print("=== Skill learning for model-based control ===")
         num_cont_skills = 3
@@ -477,6 +479,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         disc_skill = np.empty(0)
     cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
 
+    if directed:
+        min_z_pos = env.get_body_com("torso")[2]
+        max_z_pos = env.get_body_com("torso")[2]
+
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
         # Until start_steps have elapsed, randomly sample actions
@@ -496,14 +502,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 o2, _, d, _ = env.step(a)
                 # xposafter = env.get_body_com("torso")[0]
                 posafter = env.get_body_com("torso")
+                max_z_pos = np.maximum(max_z_pos, posafter[2])
+                min_z_pos = np.minimum(min_z_pos, posafter[2])
                 # forward_reward = (xposafter - xposbefore) / env.dt
                 vel = (posafter - posbefore) / env.dt
-                movement_reward = (vel * cont_skill).sum()
+                movement_reward = (vel[0:2] * cont_skill[0:2]).sum()
+                height_reward = cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
                 ctrl_cost = .5 * np.square(a).sum()
                 contact_cost = 0.5 * 1e-3 * np.sum(
                     np.square(np.clip(env.sim.data.cfrc_ext, -1, 1)))
                 survive_reward = 1.0
-                r = movement_reward - ctrl_cost - contact_cost + survive_reward
+                r = movement_reward + height_reward - ctrl_cost - contact_cost + survive_reward
             else:
                 posbefore = env.sim.data.qpos[0]
                 o2, _, d, _ = env.step(a)
