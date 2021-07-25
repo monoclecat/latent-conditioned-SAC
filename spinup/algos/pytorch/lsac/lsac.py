@@ -37,8 +37,8 @@ class ReplayBuffer:
         self.disc_skill_buf[self.ptr] = disc_skill
         self.cont_skill_buf[self.ptr] = cont_skill
         self.done_buf[self.ptr] = done
-        self.ptr = (self.ptr+1) % self.max_size
-        self.size = min(self.size+1, self.max_size)
+        self.ptr = (self.ptr + 1) % self.max_size
+        self.size = min(self.size + 1, self.max_size)
 
     def sample_batch(self, batch_size=32):
         idxs = np.random.randint(0, self.size, size=batch_size)
@@ -49,15 +49,15 @@ class ReplayBuffer:
                      disc_skill=self.disc_skill_buf[idxs],
                      cont_skill=self.cont_skill_buf[idxs],
                      done=self.done_buf[idxs])
-        return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
+        return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
          steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
          polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
-         update_after=4096, num_test_episodes=10,
+         update_after=4096, num_test_episodes=10, directed=True,  # See line 167
          logger_kwargs=dict(), save_freq=1, num_disc_skills=0, num_cont_skills=2,
-         interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
+         interval_max_JQ=2, interval_max_JINFO=3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -146,6 +146,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         num_test_episodes (int): Number of episodes to test the deterministic
             policy at the end of each epoch.
 
+        directed (bool): Experimental, if True will ignore env reward like in Eysenbach and will define own reward
+            function. Will also set own values for the number of latent variables.
+
         logger_kwargs (dict): Keyword args for EpochLogger.
 
         save_freq (int): How often (in terms of gap between epochs) to save
@@ -161,6 +164,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
+    if directed:
+        print("=== Skill learning for model-based control ===")
+        num_cont_skills = 3
+        num_disc_skills = 0
+
     total_num_skills = num_disc_skills + num_cont_skills
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -169,12 +177,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     env_name = env.spec.id
 
     if len(logger_kwargs) == 0:
-        logger_kwargs = setup_logger_kwargs(f"{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{args.exp_name}", args.seed)
+        logger_kwargs = setup_logger_kwargs(f"{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{args.exp_name}",
+                                            args.seed)
         logger_kwargs['exp_name'] = args.exp_name
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    writer = SummaryWriter(comment=f"_{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{logger_kwargs['exp_name']}")
+    writer = SummaryWriter(
+        comment=f"_{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{logger_kwargs['exp_name']}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
@@ -191,7 +201,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
     for p in ac_targ.parameters():
         p.requires_grad = False
-        
+
     # List of parameters for both Q-networks (save this for convenience)
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
@@ -201,7 +211,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
-    logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n'%var_counts)
+    logger.log('\nNumber of parameters: \t pi: %d, \t q1: %d, \t q2: %d\n' % var_counts)
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
@@ -223,8 +233,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             backup = r + gamma * (1 - d) * (q_pi_targ - alpha * logp_a2)
 
         # MSE loss against Bellman backup
-        loss_q1 = ((q1 - backup)**2).mean()
-        loss_q2 = ((q2 - backup)**2).mean()
+        loss_q1 = ((q1 - backup) ** 2).mean()
+        loss_q2 = ((q2 - backup) ** 2).mean()
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
@@ -397,7 +407,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         pi_optimizer.step()
 
         # if any([torch.isnan(x[0]).any() for x in ac.parameters()]):
-            # print("stop")
+        # print("stop")
 
         # Record things
         # d_param = torch.cat([x[0].detach().flatten() for x in ac.d.parameters()])
@@ -413,7 +423,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def test_agent():
         for j in range(num_test_episodes):
             o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
-            while not(d or (ep_len == env.spec.max_episode_steps)):
+            while not (d or (ep_len == env.spec.max_episode_steps)):
                 # Take deterministic actions at test time 
                 o, r, d, _ = test_env.step(get_action(o, True))
                 ep_ret += r
@@ -441,8 +451,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             ep_ret_s, ep_len_s = run_test_episode(skill_one_hot, np.zeros(num_cont_skills))
             ep_ret_a.append(ep_ret_s)
             ep_len_a.append(ep_len_s)
-            writer.add_scalar(f"TestDiscSkills_AvgEpReturn/{i+1}", np.mean(ep_ret_s), epoch)
-            writer.add_scalar(f"TestDiscSkills_AvgEpLength/{i+1}", np.mean(ep_len_s), epoch)
+            writer.add_scalar(f"TestDiscSkills_AvgEpReturn/{i + 1}", np.mean(ep_ret_s), epoch)
+            writer.add_scalar(f"TestDiscSkills_AvgEpLength/{i + 1}", np.mean(ep_len_s), epoch)
             # logger.store(**{f"TestEpRet-Skill{i+1}": ep_ret_s}, **{f"TestEpLen-Skill{i+1}": ep_len_s})
         for i in range(num_cont_skills):
             for val in [-0.9, -0.45, 0.45, 0.9]:
@@ -478,7 +488,31 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             a = env.action_space.sample()
 
         # Step the env.
-        if env_name == "Hopper-v2" or env_name == "Walker2d-v2":
+        if directed:
+            # Own reward, experimental
+            if env_name == "Ant-v2":
+                # xposbefore = env.get_body_com("torso")[0]
+                posbefore = env.get_body_com("torso")
+                o2, _, d, _ = env.step(a)
+                # xposafter = env.get_body_com("torso")[0]
+                posafter = env.get_body_com("torso")
+                # forward_reward = (xposafter - xposbefore) / env.dt
+                vel = (posafter - posbefore) / env.dt
+                movement_reward = (vel * cont_skill).sum()
+                ctrl_cost = .5 * np.square(a).sum()
+                contact_cost = 0.5 * 1e-3 * np.sum(
+                    np.square(np.clip(env.sim.data.cfrc_ext, -1, 1)))
+                survive_reward = 1.0
+                r = movement_reward - ctrl_cost - contact_cost + survive_reward
+            else:
+                posbefore = env.sim.data.qpos[0]
+                o2, _, d, _ = env.step(a)
+                posafter, height, ang = env.sim.data.qpos[0:3]
+
+                r = (posafter - posbefore) / env.dt
+                r += 1.0
+                r -= 1e-3 * np.square(a).sum()
+        elif env_name == "Hopper-v2" or env_name == "Walker2d-v2":
             # Modifications to reward according to Osa et al.
             posbefore = env.sim.data.qpos[0]
             o2, _, d, _ = env.step(a)
@@ -501,7 +535,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # Ignore the "done" signal if it comes from hitting the time
         # horizon (that is, when it's an artificial terminal signal
         # that isn't based on the agent's state)
-        d = False if ep_len==env.spec.max_episode_steps else d
+        d = False if ep_len == env.spec.max_episode_steps else d
 
         # Store experience to replay buffer
         replay_buffer.store(o, a, r, disc_skill, cont_skill, o2, d)
@@ -549,13 +583,13 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         # Update handling
         # if t >= update_after and t % update_every == 0:
-            # for j in range(update_every):
-                # batch = replay_buffer.sample_batch(batch_size)
-                # update(data=batch)
+        # for j in range(update_every):
+        # batch = replay_buffer.sample_batch(batch_size)
+        # update(data=batch)
 
         # End of epoch handling
-        if (t+1) % steps_per_epoch == 0:
-            epoch = (t+1) // steps_per_epoch
+        if (t + 1) % steps_per_epoch == 0:
+            epoch = (t + 1) // steps_per_epoch
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs):
@@ -581,7 +615,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 logger.log_tabular('LogPi', with_min_and_max=True)
                 logger.log_tabular('LossPi', average_only=True)
                 logger.log_tabular('LossQ', average_only=True)
-            logger.log_tabular('Time', time.time()-start_time)
+            logger.log_tabular('Time', time.time() - start_time)
             logger.dump_tabular()
     writer.flush()
     writer.close()
@@ -589,13 +623,13 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
 if __name__ == '__main__':
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--seed', '-s', type=int, default=0)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='lsac')
     args = parser.parse_args()
-
 
     torch.set_num_threads(torch.get_num_threads())
 
