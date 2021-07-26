@@ -19,22 +19,23 @@ class ReplayBuffer:
     In the paper, the done signal is not required to be in the replay buffer.
     """
 
-    def __init__(self, obs_dim, act_dim, skill_dim, size):
+    def __init__(self, obs_dim, act_dim, disc_skill_dim, cont_skill_dim, size):
         self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.obs2_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
         self.act_buf = np.zeros(core.combined_shape(size, act_dim), dtype=np.float32)
         self.rew_buf = np.zeros(size, dtype=np.float32)
-        # Skill_buf is made up of the discrete lat. var.
-        self.skill_buf = np.zeros(core.combined_shape(size, skill_dim), dtype=np.bool_)
+        self.disc_skill_buf = np.zeros(core.combined_shape(size, disc_skill_dim), dtype=np.bool_)
+        self.cont_skill_buf = np.zeros(core.combined_shape(size, cont_skill_dim), dtype=np.float32)
         self.done_buf = np.zeros(size, dtype=np.float32)
         self.ptr, self.size, self.max_size = 0, 0, size
 
-    def store(self, obs, act, rew, skill, next_obs, done):
+    def store(self, obs, act, rew, disc_skill, cont_skill, next_obs, done):
         self.obs_buf[self.ptr] = obs
         self.obs2_buf[self.ptr] = next_obs
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
-        self.skill_buf[self.ptr] = skill
+        self.disc_skill_buf[self.ptr] = disc_skill
+        self.cont_skill_buf[self.ptr] = cont_skill
         self.done_buf[self.ptr] = done
         self.ptr = (self.ptr+1) % self.max_size
         self.size = min(self.size+1, self.max_size)
@@ -45,16 +46,18 @@ class ReplayBuffer:
                      obs2=self.obs2_buf[idxs],
                      act=self.act_buf[idxs],
                      rew=self.rew_buf[idxs],
-                     skill=self.skill_buf[idxs],
+                     disc_skill=self.disc_skill_buf[idxs],
+                     cont_skill=self.cont_skill_buf[idxs],
                      done=self.done_buf[idxs])
         return {k: torch.as_tensor(v, dtype=torch.float32) for k,v in batch.items()}
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-        steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
-        polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
-        update_after=4096, num_test_episodes=10,
-        logger_kwargs=dict(), save_freq=1, num_skills=4, interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
+         steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
+         polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
+         update_after=4096, num_test_episodes=10,
+         logger_kwargs=dict(), save_freq=1, num_disc_skills=0, num_cont_skills=2,
+         interval_max_JQ = 2, interval_max_JINFO = 3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
 
@@ -148,7 +151,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
 
-        num_skills (int): The dimension of the latent variable vector
+        num_disc_skills (int): The dimension of the discrete latent variable vector
+
+        num_cont_skills (int): The dimension of the continuous latent variable vector
 
         interval_max_JQ: The interval for maximizing JQ
 
@@ -156,6 +161,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
+    total_num_skills = num_disc_skills + num_cont_skills
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -163,13 +169,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     env_name = env.spec.id
 
     if len(logger_kwargs) == 0:
-        logger_kwargs = setup_logger_kwargs(f"{env_name}_{args.exp_name}", args.seed)
+        logger_kwargs = setup_logger_kwargs(f"{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{args.exp_name}", args.seed)
         logger_kwargs['exp_name'] = args.exp_name
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-
-    writer = SummaryWriter(comment=f"_{env_name}_{logger_kwargs['exp_name']}")
+    writer = SummaryWriter(comment=f"_{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{logger_kwargs['exp_name']}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
@@ -180,7 +185,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     act_limit = env.action_space.high[0]
 
     # Create actor-critic module and target networks
-    ac = actor_critic(env.observation_space, env.action_space, num_skills, **ac_kwargs)
+    ac = actor_critic(env.observation_space, env.action_space, num_disc_skills, num_cont_skills, **ac_kwargs)
     ac_targ = deepcopy(ac)
 
     # Freeze target networks with respect to optimizers (only update via polyak averaging)
@@ -191,7 +196,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     q_params = itertools.chain(ac.q1.parameters(), ac.q2.parameters())
 
     # Experience buffer
-    replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim, skill_dim=num_skills, size=replay_size)
+    replay_buffer = ReplayBuffer(obs_dim=obs_dim, act_dim=act_dim,
+                                 disc_skill_dim=num_disc_skills, cont_skill_dim=num_cont_skills, size=replay_size)
 
     # Count variables (protip: try to get a feel for how different size networks behave!)
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.q1, ac.q2])
@@ -199,7 +205,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     # Set up function for computing SAC Q-losses
     def compute_loss_q(data):
-        o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
+        o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        z = torch.cat((data['disc_skill'], data['cont_skill']), dim=-1)
 
         q1 = ac.q1(o, a, z)
         q2 = ac.q2(o, a, z)
@@ -230,7 +237,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     # Set up function for computing SAC pi loss
     def compute_loss_pi(data):
-        o, z = data['obs'], data['skill']
+        o = data['obs']
+        z = torch.cat((data['disc_skill'], data['cont_skill']), dim=-1)
+
         pi, logp_pi = ac.pi(o, z)
         q1_pi = ac.q1(o, pi, z)
         q2_pi = ac.q2(o, pi, z)
@@ -245,7 +254,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         return loss_pi, pi_info
 
     def compute_loss_info(data):
-        o, a, r, o2, d, z = data['obs'], data['act'], data['rew'], data['obs2'], data['done'], data['skill']
+        o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
+        z_disc, z_cont = data['disc_skill'], data['cont_skill']
+        z = torch.cat((data['disc_skill'], data['cont_skill']), dim=-1)
 
         q1_batch = ac.q1(o, a, z)
         q2_batch = ac.q2(o, a, z)
@@ -276,7 +287,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
         writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
 
-        logits = ac.d(obs=o, act=pi)
+        disc_logits, cont_mu, cont_var = ac.d(obs=o, act=pi)
 
         # TODO Cross entropy loss isn't using importance weight yet.
         #  But should work well without clipping (see fig. 17)
@@ -290,14 +301,27 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # TODO wrote own cross Entropy loss with weights - check if correct
         # Using hot-one-encoded skill vector instead of the skill index 
 
-        _, skills = np.where(z == 1)
-        loss_info = F.cross_entropy(logits, torch.tensor(skills), reduction='none')
-        # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
-        loss_info.mul_(w_clip)
+        if disc_logits is not None:
+            _, active_disc_skill = np.where(z_disc == 1)
+            disc_loss_info = F.cross_entropy(disc_logits, torch.tensor(active_disc_skill), reduction='none')
+            # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
+            disc_loss_info = disc_loss_info.mul(w_clip).mean()
+            # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
+        else:
+            disc_loss_info = None
 
-        # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
+        if cont_mu is not None:
+            # loss_info_cont = F.nll_loss(logits[:, num_disc_skills:], z_cont, reduction='none')
+            cont_loss_info = F.gaussian_nll_loss(input=cont_mu, target=z_cont, var=cont_var, reduction='none')
 
-        return loss_info.mean()
+            # https://stackoverflow.com/questions/53987906/how-to-multiply-a-tensor-row-wise-by-a-vector-in-pytorch#53988549
+            cont_loss_info = cont_loss_info.mul(w_clip.unsqueeze(dim=1))
+
+            cont_loss_info = cont_loss_info.mean()
+        else:
+            cont_loss_info = None
+
+        return disc_loss_info, cont_loss_info
 
     # def computeCrossEntropyLoss(logits, target, weights):
     #     # Based on https://ml-cheatsheet.readthedocs.io/en/latest/loss_functions.html
@@ -361,8 +385,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     def update_J_info(data):
         d_optimizer.zero_grad()
         pi_optimizer.zero_grad()
-        loss_J_info = compute_loss_info(data)
-        loss_J_info.backward()
+        disc_loss_J_info, cont_loss_J_info = compute_loss_info(data)
+        if disc_loss_J_info is not None:
+            disc_loss_J_info.backward(retain_graph=cont_loss_J_info is not None)
+            writer.add_scalar("Loss/disc_J_info", disc_loss_J_info.item(), t)
+            logger.store(LossD=disc_loss_J_info.item())
+        if cont_loss_J_info is not None:
+            cont_loss_J_info.backward()
+            writer.add_scalar("Loss/cont_J_info", cont_loss_J_info.item(), t)
         d_optimizer.step()
         pi_optimizer.step()
 
@@ -374,12 +404,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # writer.add_scalar("Weights/D_param_mean", d_param.mean(), t)
         # writer.add_scalar("Weights/D_param_max", d_param.max(), t)
         # writer.add_scalar("Weights/D_param_min", d_param.min(), t)
-        writer.add_scalar("Loss/J_info", loss_J_info.item(), t)
-        logger.store(LossD=loss_J_info.item())
 
-    def get_action(o, skills, deterministic=False):
-        return ac.act(torch.as_tensor(o, dtype=torch.float32), torch.as_tensor(skills, dtype=torch.float32),
-                      deterministic)
+    def get_action(o, disc_skills, cont_skills, deterministic=False):
+        skills = torch.cat((torch.as_tensor(disc_skills, dtype=torch.float32),
+                            torch.as_tensor(cont_skills, dtype=torch.float32)), dim=-1)
+        return ac.act(torch.as_tensor(o, dtype=torch.float32), skills, deterministic)
 
     def test_agent():
         for j in range(num_test_episodes):
@@ -391,26 +420,39 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 ep_len += 1
             logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
+    def run_test_episode(disc_skill_vec, cont_skill_vec):
+        ep_ret_s, ep_len_s = ([] for _ in range(2))
+        for j in range(num_test_episodes):
+            o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
+            while not (d or (ep_len == env.spec.max_episode_steps)):
+                # Take deterministic actions at test time
+                o, r, d, _ = test_env.step(get_action(o, disc_skill_vec, cont_skill_vec, deterministic=True))
+                ep_ret += r
+                ep_len += 1
+            ep_ret_s.append(ep_ret)
+            ep_len_s.append(ep_len)
+        return ep_ret_s, ep_len_s
+
     def test_skills():
         ep_ret_a, ep_len_a = ([] for _ in range(2))
-        for i in range(num_skills):
-            ep_ret_s, ep_len_s = ([] for _ in range(2))
-            skill_one_hot = np.zeros(num_skills)
+        for i in range(num_disc_skills):
+            skill_one_hot = np.zeros(num_disc_skills)
             skill_one_hot[i] = 1
-            for j in range(num_test_episodes):
-                o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
-                while not(d or (ep_len == env.spec.max_episode_steps)):
-                    # Take deterministic actions at test time
-                    o, r, d, _ = test_env.step(get_action(o, skill_one_hot, deterministic=True))
-                    ep_ret += r
-                    ep_len += 1
-                ep_ret_s.append(ep_ret)
-                ep_len_s.append(ep_len)
+            ep_ret_s, ep_len_s = run_test_episode(skill_one_hot, np.zeros(num_cont_skills))
             ep_ret_a.append(ep_ret_s)
             ep_len_a.append(ep_len_s)
-            writer.add_scalar(f"TestSkills/AvgEpReturn/{i+1}", np.mean(ep_ret_s), epoch)
-            writer.add_scalar(f"TestSkills/AvgEpLength/{i+1}", np.mean(ep_len_s), epoch)
+            writer.add_scalar(f"TestDiscSkills_AvgEpReturn/{i+1}", np.mean(ep_ret_s), epoch)
+            writer.add_scalar(f"TestDiscSkills_AvgEpLength/{i+1}", np.mean(ep_len_s), epoch)
             # logger.store(**{f"TestEpRet-Skill{i+1}": ep_ret_s}, **{f"TestEpLen-Skill{i+1}": ep_len_s})
+        for i in range(num_cont_skills):
+            for val in [-0.9, -0.45, 0.45, 0.9]:
+                skill_one_hot = np.zeros(num_cont_skills)
+                skill_one_hot[i] = val
+                ep_ret_s, ep_len_s = run_test_episode(np.zeros(num_disc_skills), skill_one_hot)
+                ep_ret_a.append(ep_ret_s)
+                ep_len_a.append(ep_len_s)
+                writer.add_scalar(f"TestContSkills_AvgEpReturn/{i + 1}={val}", np.mean(ep_ret_s), epoch)
+                writer.add_scalar(f"TestContSkills_AvgEpLength/{i + 1}={val}", np.mean(ep_len_s), epoch)
         return ep_ret_a, ep_len_a
 
     # Prepare for interaction with environment
@@ -418,8 +460,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     start_time = time.time()
     o, ep_ret, ep_len = env.reset(), 0, 0
 
-    skills = np.zeros(num_skills)
-    skills[np.random.randint(num_skills)] = True
+    if num_disc_skills > 0:
+        disc_skill = np.zeros(num_disc_skills)
+        disc_skill[np.random.randint(num_disc_skills)] = True
+    else:
+        disc_skill = np.empty(0)
+    cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
@@ -427,7 +473,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         # from a uniform distribution for better exploration. Afterwards, 
         # use the learned policy. 
         if t > start_steps:
-            a = get_action(o, skills)
+            a = get_action(o, disc_skill, cont_skill)
         else:
             a = env.action_space.sample()
 
@@ -458,7 +504,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         d = False if ep_len==env.spec.max_episode_steps else d
 
         # Store experience to replay buffer
-        replay_buffer.store(o, a, r, skills, o2, d)
+        replay_buffer.store(o, a, r, disc_skill, cont_skill, o2, d)
 
         # Super critical, easy to overlook step: make sure to update 
         # most recent observation!
@@ -469,8 +515,12 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             o, ep_ret, ep_len = env.reset(), 0, 0
 
-            skills = np.zeros(num_skills)
-            skills[np.random.randint(num_skills)] = True
+            if num_disc_skills > 0:
+                disc_skill = np.zeros(num_disc_skills)
+                disc_skill[np.random.randint(num_disc_skills)] = True
+            else:
+                disc_skill = np.empty(0)
+            cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
 
         if t >= update_after:
             # Not using update_every from orig SAC, as Osa don't say anything about this
@@ -535,6 +585,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.dump_tabular()
     writer.flush()
     writer.close()
+
 
 if __name__ == '__main__':
     import argparse
