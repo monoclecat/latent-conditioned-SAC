@@ -121,14 +121,19 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
         print(f"Active discrete skill is {disc_skill}")
         disc_vec = torch.zeros(num_disc_skills)
         disc_vec[disc_skill-1] = True
+    else:
+        disc_vec = torch.zeros(0)
 
     if num_cont_skills > 0:
         assert cont_skill is not None and len(cont_skill) == num_cont_skills, \
             f"The loaded model knows {num_cont_skills} different CONTINUOUS skills. " \
             f"Please provide the command line argument -cs with {num_cont_skills} space separated float values, " \
-            f"preferably between -1 and +1 (e.g. -cs -0.5 0.6). You entered: {', '.join(str(x) for x in cont_skill)}."
+            f"preferably between -1 and +1 (e.g. -cs -0.5 0.6). " \
+            f"You entered: {', '.join(str(x) for x in cont_skill) if cont_skill is not None else 'None'}."
         print(f"Active continuous skill vector is {cont_skill}")
         cont_vec = torch.as_tensor(cont_skill)
+    else:
+        cont_vec = torch.zeros(0)
 
     if num_disc_skills > 0 or num_cont_skills > 0:
         def get_action(x, writer: SummaryWriter, t):
@@ -136,11 +141,13 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
                 pred_disc_skill, pred_cont_skill, cont_skill_var = model.d(x, torch.as_tensor(action))
-                pred_disc_skill = pred_disc_skill.softmax(dim=-1)
-                writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
-                                   {str(x+1): y for x, y in enumerate(pred_disc_skill)}, t)
-                writer.add_scalars(f"PredContSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
-                                   {'mu': pred_cont_skill, 'var': cont_skill_var})
+                if pred_disc_skill is not None:
+                    pred_disc_skill = pred_disc_skill.softmax(dim=-1)
+                    writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                       {str(x+1): y for x, y in enumerate(pred_disc_skill)}, t)
+                if pred_cont_skill is not None:
+                    writer.add_scalars(f"PredContSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                       {f"mu{x+1}": y for x, y in enumerate(pred_cont_skill)})
             return action
     else:
         def get_action(x, writer, t):
