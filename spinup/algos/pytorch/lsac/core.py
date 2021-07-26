@@ -99,21 +99,47 @@ class MLPQFunction(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, obs_dim, act_dim, num_skills, hidden_sizes, activation):
+    def __init__(self, obs_dim, act_dim, num_disc_skills, num_cont_skills, hidden_sizes, activation):
         super().__init__()
-        self.net = mlp([obs_dim + act_dim] + list(hidden_sizes) + [num_skills], activation)  # , activation)
-        # self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_skills), nn.Softmax())
+        self._num_disc_skills = num_disc_skills
+        self._num_cont_skills = num_cont_skills
+
+        self.net = mlp([obs_dim + act_dim] + list(hidden_sizes), activation, activation)
+
+        # self.skillLayer = mlp([skill_dim, skill_dim], activation, activation)
+        # self.skillObsActLayer = mlp([obs_dim + skill_dim] + list(hidden_sizes), activation, activation)
+
+        if self._num_cont_skills > 0:
+            self.cont_mu_layer = nn.Linear(hidden_sizes[-1], num_cont_skills)
+            self.cont_log_var_layer = nn.Linear(hidden_sizes[-1], num_cont_skills)
+
+        if self._num_disc_skills > 0:
+            self.disc_layer = nn.Linear(hidden_sizes[-1], num_disc_skills)
+        # self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
 
     def forward(self, obs, act):
         net_out = self.net(torch.cat([obs, act], dim=-1))
-        return net_out
-        # disc = self.disc_layer(net_out)
-        # return disc
+
+        if self._num_cont_skills > 0:
+            cont_mu = self.cont_mu_layer(net_out)
+            log_var = self.cont_log_var_layer(net_out)
+            log_var = torch.clamp(log_var, LOG_STD_MIN, LOG_STD_MAX)
+            cont_var = torch.exp(log_var)
+        else:
+            cont_mu = None
+            cont_var = None
+
+        if self._num_disc_skills > 0:
+            disc = self.disc_layer(net_out)
+        else:
+            disc = None
+
+        return disc, cont_mu, cont_var
 
 
 class OsaSkillActorCritic(nn.Module):
 
-    def __init__(self, observation_space, action_space, num_skills, hidden_sizes=(256,256),
+    def __init__(self, observation_space, action_space, num_disc_skills, num_cont_skills, hidden_sizes=(256,256),
                  activation=nn.ReLU):
         super().__init__()
 
@@ -121,16 +147,24 @@ class OsaSkillActorCritic(nn.Module):
         act_dim = action_space.shape[0]
         act_limit = action_space.high[0]
 
-        self._num_skills = num_skills
+        self._num_disc_skills = num_disc_skills
+        self._num_cont_skills = num_cont_skills
+        total_num_skills = num_disc_skills + num_cont_skills
 
         # build policy and value functions
-        self.pi = SquashedGaussianMLPActor(obs_dim, num_skills, act_dim, hidden_sizes, activation, act_limit)
-        self.d = Discriminator(obs_dim, act_dim, num_skills, hidden_sizes, activation)
-        self.q1 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
-        self.q2 = MLPQFunction(obs_dim, act_dim, num_skills, hidden_sizes, activation)
+        self.pi = SquashedGaussianMLPActor(obs_dim, total_num_skills, act_dim, hidden_sizes, activation, act_limit)
+        self.d = Discriminator(obs_dim, act_dim, num_disc_skills, num_cont_skills, hidden_sizes, activation)
+        self.q1 = MLPQFunction(obs_dim, act_dim, total_num_skills, hidden_sizes, activation)
+        self.q2 = MLPQFunction(obs_dim, act_dim, total_num_skills, hidden_sizes, activation)
 
     def num_skills(self):
         return self._num_skills
+
+    def num_disc_skills(self):
+        return self._num_disc_skills
+
+    def num_cont_skills(self):
+        return self._num_cont_skills
 
     def act(self, obs, skill, deterministic=False):
         with torch.no_grad():
