@@ -442,7 +442,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 # forward_reward = (xposafter - xposbefore) / env.dt
                 vel = (posafter - posbefore) / env.dt
                 movement_reward = (vel[0:2] * cont_skill[0:2]).sum()
-                height_reward = cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
+                height_reward = 0  # cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
                 ctrl_cost = .5 * np.square(a).sum()
                 contact_cost = 0.5 * 1e-3 * np.sum(
                     np.square(np.clip(env.sim.data.cfrc_ext, -1, 1)))
