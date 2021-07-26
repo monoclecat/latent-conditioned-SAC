@@ -274,32 +274,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         q_batch.exp_()
         q_pi.exp_()
         imp_weight = torch.div(q_pi, q_batch.sum())
-        writer.add_scalar("ImportanceWeights/q_pi_exp/Avg", q_pi.mean(), t)
-        writer.add_scalar("ImportanceWeights/q_pi_exp/Max", q_pi.max(), t)
-        writer.add_scalar("ImportanceWeights/q_batch_sum", q_batch.sum(), t)
-
-        # writer.add_histogram("ImportanceWeights/Unclipped", imp_weight, t, bins='fd')
-        writer.add_scalar("ImportanceWeights/Max/Unclipped", torch.max(imp_weight), t)
-        writer.add_scalar("ImportanceWeights/Avg/Unclipped", torch.mean(imp_weight), t)
-
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-        writer.add_scalar("ImportanceWeights/Max/Clipped", torch.max(w_clip), t)
-        writer.add_scalar("ImportanceWeights/Avg/Clipped", torch.mean(w_clip), t)
-
         disc_logits, cont_mu, cont_var = ac.d(obs=o, act=pi)
-
-        # TODO Cross entropy loss isn't using importance weight yet.
-        #  But should work well without clipping (see fig. 17)
-        #  Maybe elementwise mult. of imp. weight with the discriminator output?
-        #  But scaling logits by a constant doesn't make sense, does it?
-        #  logits.mul_(w_clip.unsqueeze(dim=1))
-        #  Scaling the loss seems right: We calculate the loss of the discriminator and scale the losses.
-        #  Losses with exceptionally high Q(s,a,z) should be increased, the rest decreased.
-        #  This way, promising state-action pairs have a higher impact on the network weights.
-
-        # TODO wrote own cross Entropy loss with weights - check if correct
-        # Using hot-one-encoded skill vector instead of the skill index 
 
         if disc_logits is not None:
             _, active_disc_skill = np.where(z_disc == 1)
@@ -311,24 +288,15 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             disc_loss_info = None
 
         if cont_mu is not None:
-            # loss_info_cont = F.nll_loss(logits[:, num_disc_skills:], z_cont, reduction='none')
             cont_loss_info = F.gaussian_nll_loss(input=cont_mu, target=z_cont, var=cont_var, reduction='none')
 
-            # https://stackoverflow.com/questions/53987906/how-to-multiply-a-tensor-row-wise-by-a-vector-in-pytorch#53988549
+            # https://stackoverflow.com/q/53987906/5568461
             cont_loss_info = cont_loss_info.mul(w_clip.unsqueeze(dim=1))
-
             cont_loss_info = cont_loss_info.mean()
         else:
             cont_loss_info = None
 
         return disc_loss_info, cont_loss_info
-
-    # def computeCrossEntropyLoss(logits, target, weights):
-    #     # Based on https://ml-cheatsheet.readthedocs.io/en/latest/loss_functions.html
-    #     log_logits = torch.log(logits)
-    #     target.mul_(log_logits)
-    #     cross_loss = -target.sum(dim=1)
-    #     return cross_loss.mul_(weights)
 
     # Set up optimizers for policy, q-function and discriminator
     pi_optimizer = Adam(ac.pi.parameters(), lr=lr)
@@ -345,15 +313,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_q.backward()
         q_optimizer.step()
 
-        # Record things
-        # q1_param = torch.cat([x[0].detach().flatten() for x in ac.q1.parameters()])
-        # writer.add_scalar("Weights/Q1_param_mean", q1_param.mean(), t)
-        # writer.add_scalar("Weights/Q1_param_max", q1_param.max(), t)
-        # writer.add_scalar("Weights/Q1_param_min", q1_param.min(), t)
-        # q2_param = torch.cat([x[0].detach().flatten() for x in ac.q2.parameters()])
-        # writer.add_scalar("Weights/Q2_param_mean", q2_param.mean(), t)
-        # writer.add_scalar("Weights/Q2_param_max", q2_param.max(), t)
-        # writer.add_scalar("Weights/Q2_param_min", q2_param.min(), t)
         writer.add_scalar("Loss/Q", loss_q.item(), t)
         logger.store(LossQ=loss_q.item(), **q_info)
 
@@ -364,11 +323,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_pi.backward()
         pi_optimizer.step()
 
-        # Record things
-        # pi_param = torch.cat([x[0].detach().flatten() for x in ac.pi.parameters()])
-        # writer.add_scalar("Weights/Pi_param_mean", pi_param.mean(), t)
-        # writer.add_scalar("Weights/Pi_param_max", pi_param.max(), t)
-        # writer.add_scalar("Weights/Pi_param_min", pi_param.min(), t)
         writer.add_scalar("Loss/Pi", loss_pi.item(), t)
         writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
         writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
@@ -396,29 +350,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         d_optimizer.step()
         pi_optimizer.step()
 
-        # if any([torch.isnan(x[0]).any() for x in ac.parameters()]):
-            # print("stop")
-
-        # Record things
-        # d_param = torch.cat([x[0].detach().flatten() for x in ac.d.parameters()])
-        # writer.add_scalar("Weights/D_param_mean", d_param.mean(), t)
-        # writer.add_scalar("Weights/D_param_max", d_param.max(), t)
-        # writer.add_scalar("Weights/D_param_min", d_param.min(), t)
-
     def get_action(o, disc_skills, cont_skills, deterministic=False):
         skills = torch.cat((torch.as_tensor(disc_skills, dtype=torch.float32),
                             torch.as_tensor(cont_skills, dtype=torch.float32)), dim=-1)
         return ac.act(torch.as_tensor(o, dtype=torch.float32), skills, deterministic)
-
-    def test_agent():
-        for j in range(num_test_episodes):
-            o, d, ep_ret, ep_len = test_env.reset(), False, 0, 0
-            while not(d or (ep_len == env.spec.max_episode_steps)):
-                # Take deterministic actions at test time 
-                o, r, d, _ = test_env.step(get_action(o, True))
-                ep_ret += r
-                ep_len += 1
-            logger.store(TestEpRet=ep_ret, TestEpLen=ep_len)
 
     def run_test_episode(disc_skill_vec, cont_skill_vec):
         ep_ret_s, ep_len_s = ([] for _ in range(2))
@@ -546,12 +481,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 # Unfreeze Q-networks so you can optimize it at next DDPG step.
                 for p in q_params:
                     p.requires_grad = True
-
-        # Update handling
-        # if t >= update_after and t % update_every == 0:
-            # for j in range(update_every):
-                # batch = replay_buffer.sample_batch(batch_size)
-                # update(data=batch)
 
         # End of epoch handling
         if (t+1) % steps_per_epoch == 0:
