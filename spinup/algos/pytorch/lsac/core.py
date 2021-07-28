@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
+from torch.distributions.categorical import Categorical
 
 
 def combined_shape(length, shape=None):
@@ -115,26 +116,27 @@ class Discriminator(nn.Module):
 
         if self._num_disc_skills > 0:
             # self.disc_layer = nn.Linear(hidden_sizes[-1], num_disc_skills)
-            self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
+            self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax(dim=-1))
 
     def forward(self, obs, act):
         net_out = self.net(torch.cat([obs, act], dim=-1))
 
         if self._num_cont_skills > 0:
             cont_mu = self.cont_mu_layer(net_out)
-            log_var = self.cont_log_var_layer(net_out)
-            log_var = torch.clamp(log_var, LOG_STD_MIN, LOG_STD_MAX)
-            cont_var = torch.exp(log_var)
+            cont_log_var = self.cont_log_var_layer(net_out)
+            cont_log_var = torch.clamp(cont_log_var, LOG_STD_MIN, LOG_STD_MAX)
+            cont_var = torch.exp(cont_log_var)
+            cont_entropy = Normal(cont_mu, cont_var).entropy().mean(dim=0)
         else:
-            cont_mu = None
-            cont_var = None
+            cont_mu, cont_var, cont_entropy = None, None, None
 
         if self._num_disc_skills > 0:
             disc = self.disc_layer(net_out)
+            disc_entropy = Categorical(probs=disc).entropy().mean()
         else:
-            disc = None
+            disc, disc_entropy = None, None
 
-        return disc, cont_mu, cont_var
+        return disc, cont_mu, cont_var, disc_entropy, cont_entropy
 
 
 class OsaSkillActorCritic(nn.Module):
