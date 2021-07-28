@@ -55,7 +55,7 @@ class ReplayBuffer:
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
          steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
          polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
-         update_after=4096, num_test_episodes=10, directed=True,  # See line 167
+         update_after=4096, num_test_episodes=10,
          logger_kwargs=dict(), save_freq=1, num_disc_skills=0, num_cont_skills=2,
          interval_max_JQ=2, interval_max_JINFO=3, clip=0.2):
     """
@@ -146,9 +146,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         num_test_episodes (int): Number of episodes to test the deterministic
             policy at the end of each epoch.
 
-        directed (bool): Experimental, if True will ignore env reward like in Eysenbach and will define own reward
-            function. Will also set own values for the number of latent variables.
-
         logger_kwargs (dict): Keyword args for EpochLogger.
 
         save_freq (int): How often (in terms of gap between epochs) to save
@@ -164,13 +161,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
-    max_z_pos = 0.0
-    min_z_pos = 0.0
-    if directed:
-        print("=== Skill learning for model-based control ===")
-        num_cont_skills = 3
-        num_disc_skills = 0
-
     total_num_skills = num_disc_skills + num_cont_skills
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -414,10 +404,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         disc_skill = np.empty(0)
     cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
 
-    if directed:
-        min_z_pos = env.get_body_com("torso")[2]
-        max_z_pos = env.get_body_com("torso")[2]
-
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
         # Until start_steps have elapsed, randomly sample actions
@@ -429,34 +415,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             a = env.action_space.sample()
 
         # Step the env.
-        if directed:
-            # Own reward, experimental
-            if env_name == "Ant-v2":
-                # xposbefore = env.get_body_com("torso")[0]
-                posbefore = env.get_body_com("torso")
-                o2, _, d, _ = env.step(a)
-                # xposafter = env.get_body_com("torso")[0]
-                posafter = env.get_body_com("torso")
-                max_z_pos = np.maximum(max_z_pos, posafter[2])
-                min_z_pos = np.minimum(min_z_pos, posafter[2])
-                # forward_reward = (xposafter - xposbefore) / env.dt
-                vel = (posafter - posbefore) / env.dt
-                movement_reward = (vel[0:2] * cont_skill[0:2]).sum()
-                height_reward = cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
-                ctrl_cost = .5 * np.square(a).sum()
-                contact_cost = 0.5 * 1e-3 * np.sum(
-                    np.square(np.clip(env.sim.data.cfrc_ext, -1, 1)))
-                survive_reward = 1.0
-                r = movement_reward + height_reward - ctrl_cost - contact_cost + survive_reward
-            else:
-                posbefore = env.sim.data.qpos[0]
-                o2, _, d, _ = env.step(a)
-                posafter, height, ang = env.sim.data.qpos[0:3]
-
-                r = (posafter - posbefore) / env.dt
-                r += 1.0
-                r -= 1e-3 * np.square(a).sum()
-        elif env_name == "Hopper-v2" or env_name == "Walker2d-v2":
+        if env_name == "Hopper-v2" or env_name == "Walker2d-v2":
             # Modifications to reward according to Osa et al.
             posbefore = env.sim.data.qpos[0]
             o2, _, d, _ = env.step(a)
