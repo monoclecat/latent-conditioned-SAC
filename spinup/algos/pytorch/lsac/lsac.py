@@ -53,7 +53,7 @@ class ReplayBuffer:
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-         steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
+         steps_per_epoch=5000, epochs=600, replay_size=int(1e6), gamma=0.99,
          polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
          update_after=4096, num_test_episodes=10,
          logger_kwargs=dict(), save_freq=1, num_disc_skills=2, num_cont_skills=2,
@@ -170,8 +170,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    writer = SummaryWriter(
-        comment=f"_{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{logger_kwargs['exp_name']}")
+    writer = SummaryWriter(comment=f"_{logger_kwargs['exp_name']}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
@@ -490,15 +489,17 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
             logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
             logger.log_tabular('LogProb/LogPi', with_min_and_max=True)
-            logger.log_tabular('Time', time.time() - start_time)
             for key in logger.epoch_dict.keys():
                 if key.startswith("Entropy/") or key.startswith("TestEpRet/"):
                     logger.log_tabular(key, with_min_and_max=True)
                 if key.startswith("TestEpLen/") or key.startswith("Loss/"):
                     logger.log_tabular(key, average_only=True)
+            logger.log_tabular('Time', time.time() - start_time)
+
             for key, value in logger.log_current_row.items():
                 writer.add_scalar(key, value, epoch)
             writer.flush()
+
             logger.dump_tabular()
     writer.close()
 
