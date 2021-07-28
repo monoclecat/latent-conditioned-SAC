@@ -288,11 +288,11 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         imp_weight = torch.div(q_pi, q_batch.sum())
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-        disc_logits, cont_mu, cont_var = ac.d(obs=o, act=pi)
+        disc_prob, cont_mu, cont_var = ac.d(obs=o, act=pi)
 
-        if disc_logits is not None:
+        if disc_prob is not None:
             _, active_disc_skill = np.where(z_disc == 1)
-            disc_loss_info = F.cross_entropy(disc_logits, torch.tensor(active_disc_skill), reduction='none')
+            disc_loss_info = F.nll_loss(disc_prob, torch.tensor(active_disc_skill), reduction='none')
             # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
             disc_loss_info = disc_loss_info.mul(w_clip).mean()
             # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)

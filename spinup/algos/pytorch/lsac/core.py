@@ -114,8 +114,8 @@ class Discriminator(nn.Module):
             self.cont_log_var_layer = nn.Linear(hidden_sizes[-1], num_cont_skills)
 
         if self._num_disc_skills > 0:
-            self.disc_layer = nn.Linear(hidden_sizes[-1], num_disc_skills)
-        # self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
+            # self.disc_layer = nn.Linear(hidden_sizes[-1], num_disc_skills)
+            self.disc_layer = nn.Sequential(nn.Linear(hidden_sizes[-1], num_disc_skills), nn.Softmax())
 
     def forward(self, obs, act):
         net_out = self.net(torch.cat([obs, act], dim=-1))
