@@ -140,7 +140,7 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
-                pred_disc_skill, pred_cont_skill, cont_skill_var = model.d(x, torch.as_tensor(action))
+                pred_disc_skill, pred_cont_skill, cont_skill_var, _, _ = model.d(x, torch.as_tensor(action))
                 if pred_disc_skill is not None:
                     writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
                                        {str(x + 1): y for x, y in enumerate(pred_disc_skill)}, t)
