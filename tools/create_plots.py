@@ -82,10 +82,6 @@ if __name__ == '__main__':
                 for seed, progress in seed_dict.items():
                     try:
                         if any(np.isnan(progress[col[0]])):
-                            if not any(np.isnan(progress[col[0]])):
-                                print("Hold up, there might be a NaN problem here. Some values are Nan but not all!"
-                                      "Press ENTER to continue.")
-                                input()
                             break
                         if data is None:
                             data = np.matrix(progress[col[0]])
