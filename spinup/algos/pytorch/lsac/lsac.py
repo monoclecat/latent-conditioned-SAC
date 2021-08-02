@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
 import gym
+from gym.envs.mujoco.humanoid import mass_center
 import time
 import spinup.algos.pytorch.lsac.core as core
 from spinup.utils.logx import EpochLogger
@@ -415,6 +416,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
             r += 1.0
             r -= 1e-3 * np.square(a).sum()
+        elif env_name == "Humanoid-v2":
+            pos_before = mass_center(env.model, env.sim)
+            o2, _, d, _ = env.step(a)
+            pos_after = mass_center(env.model, env.sim)
+            alive_bonus = 5.0
+            lin_vel_cost = 0.25 * min((pos_after - pos_before) / env.dt, 4)
+            quad_ctrl_cost = 0.1 * np.square(env.sim.data.ctrl).sum()
+            quad_impact_cost = .5e-6 * np.square(env.sim.data.cfrc_ext).sum()
+            quad_impact_cost = min(quad_impact_cost, 10)
+            r = lin_vel_cost - quad_ctrl_cost - quad_impact_cost + alive_bonus
         else:
             o2, r, d, _ = env.step(a)
 
