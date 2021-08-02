@@ -11,6 +11,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', required=True)
     args = parser.parse_args()
 
+    if os.path.basename(args.data_dir) != 'data':
+        print(f"This function is meant to be run in the base /data directory! You are running this in the "
+              f"{os.path.basename(args.data_dir)} directory. Please press ENTER to continue anyway.")
+        input()
+
     VALID_ENVIRONMENTS = ["hopper-v2", "walker2d-v2", "humanoid-v2"]
     VALID_EXP_NAME = "exp_grid"
 
@@ -23,7 +28,7 @@ if __name__ == '__main__':
                 continue
             for exp_by_time in os.scandir(exp_by_date.path):
                 m = re.search(f"(?P<env>{'(' + ')|('.join(VALID_ENVIRONMENTS) + ')'})"
-                                     f"_(?P<disc>disc\d+)_(?P<cont>cont\d+)_(?P<seed>s\d+)", exp_by_time.name)
+                              f"_(?P<disc>disc\d+)_(?P<cont>cont\d+)_(?P<seed>s\d+)", exp_by_time.name)
                 try:
                     env_name = m.group('env')
                 except AttributeError:
@@ -65,29 +70,57 @@ if __name__ == '__main__':
         env_dir = os.path.join(plot_dir, env)
         os.makedirs(env_dir, exist_ok=True)
         for skill_id, seed_dict in skill_dict.items():
-            skill_dir = os.path.join(plot_dir, skill_id)
+            skill_dir = os.path.join(env_dir, skill_id)
             os.makedirs(skill_dir, exist_ok=True)
 
-            ep_ret = None
-            for seed, progress in seed_dict.items():
-                if ep_ret is None:
-                    ep_ret = np.matrix(progress['Epoch/EpRetAverage'])
-                else:
-                    ep_ret = np.concatenate((ep_ret, np.matrix(progress['Epoch/EpRetAverage'])))
-            x = [i for i in range(ep_ret.shape[1])]
+            for col in [('Epoch/EpRetAverage', 'Avg Episode Reward'),
+                        ('LogProb/LogPiAverage', 'Avg Policy LogProb'),
+                        ('Entropy/DiscreteAverage', 'Avg Entropy Discrete Skills'),
+                        ('Entropy/Continuous1Average', 'Avg Entropy Continuous Skill #1'),
+                        ('Entropy/Continuous2Average', 'Avg Entropy Continuous Skill #2')]:
+                data = None  # Matrix of values over all seeds of this env and skill combination
+                for seed, progress in seed_dict.items():
+                    try:
+                        if any(np.isnan(progress[col[0]])):
+                            if not any(np.isnan(progress[col[0]])):
+                                print("Hold up, there might be a NaN problem here. Some values are Nan but not all!"
+                                      "Press ENTER to continue.")
+                                input()
+                            break
+                        if data is None:
+                            data = np.matrix(progress[col[0]])
+                        else:
+                            data = np.concatenate((data, np.matrix(progress[col[0]])))
+                    except KeyError:
+                        break
 
-            plt.figure()
-            plt.title(f"{env} {skill_id}")
-            plt.plot(x, ep_ret.mean(axis=0).tolist()[0], color=(1,0,0,1))
-            plt.fill_between(x, ep_ret.min(axis=0).tolist()[0], ep_ret.max(axis=0).tolist()[0], color=(1,0,0,0.3))
-            plt.show()
+                if data is None:
+                    continue
 
-            plt.figure()
-            plt.title(f"{env} {skill_id}")
-            for row in range(ep_ret.shape[0]):
-                plt.plot(x, ep_ret[row,:].tolist()[0])
-            plt.show()
+                x = [i for i in range(data.shape[1])]
 
+                plt.figure()
+                title = f"{col[1]} (from min to max) {env} {skill_id}"
+                plt.title(title)
+                plt.fill_between(x, data.min(axis=0).tolist()[0], data.max(axis=0).tolist()[0], color=(1,0.7,0.7))
+                plt.plot(x, data.mean(axis=0).tolist()[0], color=(1,0,0))
+                plt.savefig(os.path.join(skill_dir, title.replace(' ', '_')+'.eps'))
+                plt.show()
 
+                # The Kumar et al. way
+                plt.figure()
+                title = f"{col[1]} (plus-minus 0.5 std) {env} {skill_id}"
+                plt.title(title)
+                std = data.std(axis=0)*0.5
+                plt.fill_between(x, (data.mean(axis=0)-std).tolist()[0], (data.mean(axis=0)+std).tolist()[0], color=(1,0.7,0.7))
+                plt.plot(x, data.mean(axis=0).tolist()[0], color=(1,0,0))
+                plt.savefig(os.path.join(skill_dir, title.replace(' ', '_')+'.eps'))
+                plt.show()
 
-
+                plt.figure()
+                title = f"{col[1]} (all) {env} {skill_id}"
+                plt.title(title)
+                for row in range(data.shape[0]):
+                    plt.plot(x, data[row,:].tolist()[0])
+                plt.savefig(os.path.join(skill_dir, title.replace(' ', '_')+'.eps'))
+                plt.show()
