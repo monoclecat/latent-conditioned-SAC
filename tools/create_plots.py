@@ -107,7 +107,7 @@ if __name__ == '__main__':
                 plt.figure()
                 title = f"{col[1]} (plus-minus 0.5 std) {env} {skill_id}"
                 plt.title(title)
-                std = data.std(axis=0)*0.5
+                std = data.std(axis=0)*2
                 plt.fill_between(x, (data.mean(axis=0)-std).tolist()[0], (data.mean(axis=0)+std).tolist()[0], color=(1,0.7,0.7))
                 plt.plot(x, data.mean(axis=0).tolist()[0], color=(1,0,0))
                 plt.savefig(os.path.join(skill_dir, title.replace(' ', '_')+'.eps'))
