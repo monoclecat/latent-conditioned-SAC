@@ -3,27 +3,29 @@ import csv
 import numpy as np
 
 def generateMixedCsv(baseFolder):
-    directories = [f.path for f in os.scandir(baseFolder) if f.is_dir()]
+    directories = [root for root, dirs, files in os.walk(baseFolder)]
     if baseFolder + "/toolOutput" in directories:
         directories.remove(baseFolder + "/toolOutput")
 
     files = list()
 
     for directory in directories:
-        with open(directory + "/progress.txt") as tsv:
-            file = dict()
-            for column in zip(*[line for line in csv.reader(tsv, dialect="excel-tab")]):
-                if column[0] == "Epoch":
-                    continue
-                file[column[0]] = column[1:]
-            files.append(file)
+        if os.path.isfile(directory + "/progress.txt"):
+            with open(directory + "/progress.txt") as tsv:
+                file = dict()
+                for column in zip(*[line for line in csv.reader(tsv, dialect="excel-tab")]):
+                    if column[0] == "Epoch":
+                        continue
+                    file[column[0]] = column[1:]
+                files.append(file)
 
     os.makedirs(baseFolder + "/toolOutput", exist_ok=True)
 
     for key in files[0]:
-        keyValues = np.zeros(shape=(len(files), len(file[key])))
+        keyValues = np.zeros(shape=(len(files), len(files[0][key])))
         for index in range(len(files)):
-            keyValues[index] = files[index][key]
+            if key in files[index]:
+                keyValues[index] = files[index][key]
 
         os.makedirs(baseFolder + "/toolOutput/" + key, exist_ok=True)
 
