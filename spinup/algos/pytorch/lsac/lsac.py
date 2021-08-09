@@ -164,10 +164,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         clip (float): The importance weight clipping hyperparameter
     """
-    max_z_pos = 0.0
-    min_z_pos = 0.0
     if directed:
-        num_cont_skills = 1
+        num_cont_skills += 1
         num_disc_skills = 0
 
     total_num_skills = num_disc_skills + num_cont_skills
@@ -412,11 +410,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     else:
         disc_skill = np.empty(0)
     cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
-    movement_direction = np.array([np.sin(cont_skill[0]), np.cos(cont_skill[0])])
-
-    if directed:
-        min_z_pos = env.get_body_com("torso")[2]
-        max_z_pos = env.get_body_com("torso")[2]
+    speed = 1
+    movement_vector = speed * np.array([np.sin(cont_skill[0]), np.cos(cont_skill[0])])
 
     # Main loop: collect experience in env and update/log each epoch
     for t in range(total_steps):
@@ -437,10 +432,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 o2, _, d, _ = env.step(a)
                 # xposafter = env.get_body_com("torso")[0]
                 posafter = env.get_body_com("torso")
-                max_z_pos = np.maximum(max_z_pos, posafter[2])
-                min_z_pos = np.minimum(min_z_pos, posafter[2])
                 # forward_reward = (xposafter - xposbefore) / env.dt
                 vel = (posafter - posbefore) / env.dt
+                movement_reward = 100 * (speed - np.linalg.norm(movement_vector-vel[0:2]))
                 movement_reward = -np.sum(1-(vel[0:2] - cont_skill[0:2])**2)
                 height_reward = 0  # cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
                 ctrl_cost = .5 * np.square(a).sum()
