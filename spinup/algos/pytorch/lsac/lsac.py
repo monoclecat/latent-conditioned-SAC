@@ -167,8 +167,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     max_z_pos = 0.0
     min_z_pos = 0.0
     if directed:
-        print("=== Skill learning for model-based control ===")
-        num_cont_skills = 3
+        num_cont_skills = 1
         num_disc_skills = 0
 
     total_num_skills = num_disc_skills + num_cont_skills
@@ -413,6 +412,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     else:
         disc_skill = np.empty(0)
     cont_skill = np.random.random(size=num_cont_skills) * 2 - 1  # Init cont var between -1 and +1
+    movement_direction = np.array([np.sin(cont_skill[0]), np.cos(cont_skill[0])])
 
     if directed:
         min_z_pos = env.get_body_com("torso")[2]
@@ -441,7 +441,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 min_z_pos = np.minimum(min_z_pos, posafter[2])
                 # forward_reward = (xposafter - xposbefore) / env.dt
                 vel = (posafter - posbefore) / env.dt
-                movement_reward = (vel[0:2] * cont_skill[0:2]).sum()
+                movement_reward = -np.sum(1-(vel[0:2] - cont_skill[0:2])**2)
                 height_reward = 0  # cont_skill[2] * (posafter[2] - (max_z_pos*1.1 + min_z_pos*0.9)/2)
                 ctrl_cost = .5 * np.square(a).sum()
                 contact_cost = 0.5 * 1e-3 * np.sum(
