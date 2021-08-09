@@ -11,3 +11,4 @@ runs*/
 .DS_Store
 _build/
 .env
+plots/
