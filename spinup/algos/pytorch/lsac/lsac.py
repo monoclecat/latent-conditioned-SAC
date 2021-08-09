@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.optim import Adam
 from torch.utils.tensorboard import SummaryWriter
 import gym
+from gym.envs.mujoco.humanoid import mass_center
 import time
 import spinup.algos.pytorch.lsac.core as core
 from spinup.utils.logx import EpochLogger
@@ -53,10 +54,10 @@ class ReplayBuffer:
 
 
 def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0,
-         steps_per_epoch=5000, epochs=100, replay_size=int(1e6), gamma=0.99,
+         steps_per_epoch=5000, epochs=600, replay_size=int(1e6), gamma=0.99,
          polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
-         update_after=4096, num_test_episodes=10, directed=True,  # See line 167
-         logger_kwargs=dict(), save_freq=1, num_disc_skills=0, num_cont_skills=2,
+         update_after=4096, num_test_episodes=10,
+         logger_kwargs=dict(), save_freq=1, num_disc_skills=2, num_cont_skills=2,
          interval_max_JQ=2, interval_max_JINFO=3, clip=0.2):
     """
     Latent-Conditioned Soft Actor-Critic (LSAC)
@@ -138,11 +139,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             starting to do gradient descent updates. Ensures replay buffer
             is full enough for useful updates.
 
-        update_every (int): Number of env interactions that should elapse
-            between gradient descent updates. Note: Regardless of how long 
-            you wait between updates, the ratio of env steps to gradient steps 
-            is locked to 1.
-
         num_test_episodes (int): Number of episodes to test the deterministic
             policy at the end of each epoch.
 
@@ -182,8 +178,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    writer = SummaryWriter(
-        comment=f"_{env_name}_{num_disc_skills}disc_{num_cont_skills}cont_{logger_kwargs['exp_name']}")
+    writer = SummaryWriter(comment=f"_{logger_kwargs['exp_name']}")
     # Make sure that current working dir is pr_versatile_skill_learning
     # Open tensorboard in a separate terminal with: tensorboard --logdir="~/.../pr_versatile_skill_learning/runs"
 
@@ -237,10 +232,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
-        writer.add_scalar("Q_Values/Q1_mean", q1.detach().mean(), t)
-        writer.add_scalar("Q_Values/Q2_mean", q2.detach().mean(), t)
-        q_info = dict(Q1Vals=q1.detach().numpy(),
-                      Q2Vals=q2.detach().numpy())
+        q_info = {"Q/Q1Vals": q1.detach().numpy(), "Q/Q2Vals": q2.detach().numpy()}
 
         return loss_q, q_info
 
@@ -258,7 +250,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_pi = (alpha * logp_pi - q_pi).mean()
 
         # Useful info for logging
-        pi_info = dict(LogPi=logp_pi.detach().numpy())
+        pi_info = {"LogProb/LogPi": logp_pi.detach().numpy()}
 
         return loss_pi, pi_info
 
@@ -285,14 +277,14 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         imp_weight = torch.div(q_pi, q_batch.sum())
         w_clip = torch.clamp(imp_weight, 1 - clip, 1 + clip)
 
-        disc_logits, cont_mu, cont_var = ac.d(obs=o, act=pi)
+        disc_prob, cont_mu, cont_var, disc_entropy, cont_entropy = ac.d(obs=o, act=pi)
+        logger.store_dict({"Entropy/Discrete":  disc_entropy})
+        [logger.store_dict({f"Entropy/Continuous{i+1}": cont_entropy[i]}) for i, val in enumerate(cont_entropy)]
 
-        if disc_logits is not None:
+        if disc_prob is not None:
             _, active_disc_skill = np.where(z_disc == 1)
-            disc_loss_info = F.cross_entropy(disc_logits, torch.tensor(active_disc_skill), reduction='none')
-            # writer.add_scalar("Loss/J_info_pre_W_scale", loss_info.mean(), t)
+            disc_loss_info = F.nll_loss(disc_prob, torch.tensor(active_disc_skill), reduction='none')
             disc_loss_info = disc_loss_info.mul(w_clip).mean()
-            # loss_info = computeCrossEntropyLoss(logits=logits, target=z, weights=w_clip)
         else:
             disc_loss_info = None
 
@@ -322,8 +314,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_q.backward()
         q_optimizer.step()
 
-        writer.add_scalar("Loss/Q", loss_q.item(), t)
-        logger.store(LossQ=loss_q.item(), **q_info)
+        logger.store_dict(q_info)
+        logger.store_dict({"Loss/Q": loss_q.item()})
 
     def update_actor(data):
         # Run one gradient descent step for pi.
@@ -332,10 +324,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         loss_pi.backward()
         pi_optimizer.step()
 
-        writer.add_scalar("Loss/Pi", loss_pi.item(), t)
-        writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
-        writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
-        logger.store(LossPi=loss_pi.item(), **pi_info)
+        logger.store_dict({"Loss/Pi": loss_pi.item()})
+        logger.store_dict(pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -351,11 +341,10 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         disc_loss_J_info, cont_loss_J_info = compute_loss_info(data)
         if disc_loss_J_info is not None:
             disc_loss_J_info.backward(retain_graph=cont_loss_J_info is not None)
-            writer.add_scalar("Loss/disc_J_info", disc_loss_J_info.item(), t)
-            logger.store(LossD=disc_loss_J_info.item())
+            logger.store_dict({"Loss/Disc_J_info": disc_loss_J_info.item()})
         if cont_loss_J_info is not None:
             cont_loss_J_info.backward()
-            writer.add_scalar("Loss/cont_J_info", cont_loss_J_info.item(), t)
+            logger.store_dict({"Loss/Cont_J_info": cont_loss_J_info.item()})
         d_optimizer.step()
         pi_optimizer.step()
 
@@ -385,9 +374,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             ep_ret_s, ep_len_s = run_test_episode(skill_one_hot, np.zeros(num_cont_skills))
             ep_ret_a.append(ep_ret_s)
             ep_len_a.append(ep_len_s)
-            writer.add_scalar(f"TestDiscSkills_AvgEpReturn/{i + 1}", np.mean(ep_ret_s), epoch)
-            writer.add_scalar(f"TestDiscSkills_AvgEpLength/{i + 1}", np.mean(ep_len_s), epoch)
-            # logger.store(**{f"TestEpRet-Skill{i+1}": ep_ret_s}, **{f"TestEpLen-Skill{i+1}": ep_len_s})
+            logger.store_dict({f"TestEpRet/DiscSkill{i+1}": ep_ret_s, f"TestEpLen/DiscSkill{i+1}": ep_len_s})
         for i in range(num_cont_skills):
             for val in [-0.9, -0.45, 0.45, 0.9]:
                 skill_one_hot = np.zeros(num_cont_skills)
@@ -395,8 +382,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 ep_ret_s, ep_len_s = run_test_episode(np.zeros(num_disc_skills), skill_one_hot)
                 ep_ret_a.append(ep_ret_s)
                 ep_len_a.append(ep_len_s)
-                writer.add_scalar(f"TestContSkills_AvgEpReturn/{i + 1}={val}", np.mean(ep_ret_s), epoch)
-                writer.add_scalar(f"TestContSkills_AvgEpLength/{i + 1}={val}", np.mean(ep_len_s), epoch)
+                logger.store_dict({f"TestEpRet/ContSkill{i + 1}={val}": ep_ret_s,
+                                   f"TestEpLen/ContSkill{i + 1}={val}": ep_len_s})
         return ep_ret_a, ep_len_a
 
     # Prepare for interaction with environment
@@ -464,6 +451,16 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
             r += 1.0
             r -= 1e-3 * np.square(a).sum()
+        elif env_name == "Humanoid-v2":
+            pos_before = mass_center(env.model, env.sim)
+            o2, _, d, _ = env.step(a)
+            pos_after = mass_center(env.model, env.sim)
+            alive_bonus = 5.0
+            lin_vel_cost = 0.25 * min((pos_after - pos_before) / env.dt, 4)
+            quad_ctrl_cost = 0.1 * np.square(env.sim.data.ctrl).sum()
+            quad_impact_cost = .5e-6 * np.square(env.sim.data.cfrc_ext).sum()
+            quad_impact_cost = min(quad_impact_cost, 10)
+            r = lin_vel_cost - quad_ctrl_cost - quad_impact_cost + alive_bonus
         else:
             o2, r, d, _ = env.step(a)
 
@@ -484,7 +481,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
         # End of trajectory handling
         if d or (ep_len == env.spec.max_episode_steps):
-            logger.store(EpRet=ep_ret, EpLen=ep_len)
+            logger.store_dict({"Epoch/EpRet": ep_ret, "Epoch/EpLen": ep_len})
             o, ep_ret, ep_len = env.reset(), 0, 0
 
             if num_disc_skills > 0:
@@ -527,29 +524,29 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             if (epoch % save_freq == 0) or (epoch == epochs):
                 logger.save_state({'env': env}, None)
 
-            writer.add_scalar("Epoch/AvgEpRet", np.mean(logger.epoch_dict.get('EpRet')), epoch)
-            writer.add_scalar("Epoch/AvgEpLen", np.mean(logger.epoch_dict.get('EpLen')), epoch)
-
             # Test the performance of the deterministic version of the agent.
             test_skills()
 
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)
-            logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('EpLen', average_only=True)
-            # for i in range(num_skills):
-            #     logger.log_tabular(f"TestEpRet-Skill{i+1}", with_min_and_max=True)
-            #     logger.log_tabular(f"TestEpLen-Skill{i+1}", average_only=True)
+            logger.log_tabular('Epoch/EpRet', with_min_and_max=True)
+            logger.log_tabular('Epoch/EpLen', average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
-            if t > update_after:
-                logger.log_tabular('Q1Vals', with_min_and_max=True)
-                logger.log_tabular('Q2Vals', with_min_and_max=True)
-                logger.log_tabular('LogPi', with_min_and_max=True)
-                logger.log_tabular('LossPi', average_only=True)
-                logger.log_tabular('LossQ', average_only=True)
+            logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
+            logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
+            logger.log_tabular('LogProb/LogPi', with_min_and_max=True)
+            for key in logger.epoch_dict.keys():
+                if key.startswith("Entropy/") or key.startswith("TestEpRet/"):
+                    logger.log_tabular(key, with_min_and_max=True)
+                if key.startswith("TestEpLen/") or key.startswith("Loss/"):
+                    logger.log_tabular(key, average_only=True)
             logger.log_tabular('Time', time.time() - start_time)
+
+            for key, value in logger.log_current_row.items():
+                writer.add_scalar(key, value, epoch)
+            writer.flush()
+
             logger.dump_tabular()
-    writer.flush()
     writer.close()
 
 

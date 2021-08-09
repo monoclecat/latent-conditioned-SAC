@@ -8,6 +8,7 @@ import time
 import spinup.algos.pytorch.sac.core as core
 from spinup.utils.logx import EpochLogger
 from torch.utils.tensorboard import SummaryWriter
+from gym.envs.mujoco.humanoid import mass_center
 
 
 class ReplayBuffer:
@@ -43,10 +44,10 @@ class ReplayBuffer:
 
 
 
-def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
-        polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
+def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+        steps_per_epoch=5000, epochs=600, replay_size=int(1e6), gamma=0.99,
+        polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
+        update_after=4096, num_test_episodes=10, update_every=50, max_ep_len=1000,
         logger_kwargs=dict(), save_freq=1):
     """
     Soft Actor-Critic (SAC)
@@ -155,6 +156,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
     np.random.seed(seed)
 
     env, test_env = env_fn(), env_fn()
+    env_name = env.spec.id
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
 
@@ -302,7 +304,33 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             a = env.action_space.sample()
 
         # Step the env
-        o2, r, d, _ = env.step(a)
+        if env_name == "Hopper-v2" or env_name == "Walker2d-v2":
+            # Modifications to reward according to Osa et al.
+            posbefore = env.sim.data.qpos[0]
+            o2, _, d, _ = env.step(a)
+            posafter, height, ang = env.sim.data.qpos[0:3]
+
+            if env_name == "Hopper-v2":
+                r = min((posafter - posbefore) / env.dt, 1)
+            else:
+                # Walker2d-v2
+                r = min((posafter - posbefore) / env.dt, 2)
+
+            r += 1.0
+            r -= 1e-3 * np.square(a).sum()
+        elif env_name == "Humanoid-v2":
+            pos_before = mass_center(env.model, env.sim)
+            o2, _, d, _ = env.step(a)
+            pos_after = mass_center(env.model, env.sim)
+            alive_bonus = 5.0
+            lin_vel_cost = 0.25 * min((pos_after - pos_before) / env.dt, 4)
+            quad_ctrl_cost = 0.1 * np.square(env.sim.data.ctrl).sum()
+            quad_impact_cost = .5e-6 * np.square(env.sim.data.cfrc_ext).sum()
+            quad_impact_cost = min(quad_impact_cost, 10)
+            r = lin_vel_cost - quad_ctrl_cost - quad_impact_cost + alive_bonus
+        else:
+            o2, r, d, _ = env.step(a)
+
         ep_ret += r
         ep_len += 1
 

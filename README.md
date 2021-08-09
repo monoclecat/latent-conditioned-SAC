@@ -43,8 +43,8 @@ Not sure how many skills the agent has been trained on?
 Just run the agent without specifying the skill and the error message will tell you. 
 ```bash
 # Example for an agent with discrete skills and a two-dimensional continuous skill
-python -m spinup.run test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
+python -m spinup.run test_policy data/lsac/lsac_s0 --disc-skill 1 --cont-skill -0.3 0.7
 # or
-python -m spinup.utils.test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
+python -m spinup.utils.test_policy data/lsac/lsac_s0 --disc-skill 1 --cont-skill -0.3 0.7
 ```
 

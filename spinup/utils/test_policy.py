@@ -7,6 +7,8 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
+import png
+from gym import wrappers
 
 
 def load_policy_and_env(fpath, itr='last', deterministic=False, disc_skill=None, cont_skill=None):
@@ -140,9 +142,8 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
-                pred_disc_skill, pred_cont_skill, cont_skill_var = model.d(x, torch.as_tensor(action))
+                pred_disc_skill, pred_cont_skill, cont_skill_var, _, _ = model.d(x, torch.as_tensor(action))
                 if pred_disc_skill is not None:
-                    pred_disc_skill = pred_disc_skill.softmax(dim=-1)
                     writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
                                        {str(x + 1): y for x, y in enumerate(pred_disc_skill)}, t)
                 if pred_cont_skill is not None:
@@ -159,11 +160,17 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
     return get_action
 
 
-def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
+def transformImage(image):
+    pixels = image.flatten().reshape(500, 1500)
+    return pixels
+
+def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, renderImage=False, imageFrequency=None, imageBasePath=None):
     assert env is not None, \
         "Environment not found!\n\n It looks like the environment wasn't saved, " + \
         "and we can't run the agent in it. :( \n\n Check out the readthedocs " + \
         "page on Experiment Outputs for how to handle this situation."
+
+    # env = wrappers.Monitor(env, './videos/' + "test" + '/')
 
     logger = EpochLogger()
     writer = SummaryWriter(comment="test_policy")
@@ -171,19 +178,41 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
     t = 0
 
     start_paused = render
+
+    if renderImage:
+        imageInfo = dict()
+        imageInfo["height"] = 500
+        imageInfo["width"] = 500
+        episodeImageNumber = 0
+        if not(os.path.isdir("{}/images/".format(imageBasePath))):
+            os.mkdir("{}/images/".format(imageBasePath))
+
     while n < num_episodes:
         if render:
-            env.render()
+            if renderImage:
+                image = env.render(mode='rgb_array')
+            else:
+                env.render()
             time.sleep(1e-3)
         if start_paused:
             input("Press ENTER to start")
             start_paused = False
+
+        if renderImage:
+            if episodeImageNumber % imageFrequency == 0:    
+                pixels = transformImage(image)
+                path = "{}/images/episode{}_timestep{}.png".format(imageBasePath, n, episodeImageNumber)
+                png.from_array(pixels, 'RGB', info=imageInfo).save(path)
 
         a = get_action(o, writer, t)
         o, r, d, _ = env.step(a)
         ep_ret += r
         ep_len += 1
         t += 1
+        if renderImage:
+            episodeImageNumber+=1
+            if d or (ep_len == max_ep_len):
+                episodeImageNumber = 0
 
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
@@ -213,10 +242,13 @@ if __name__ == '__main__':
     parser.add_argument('--cont-skill', '-cs', type=float, default=None, nargs='+',
                         help='Set the continuous skill vector with space-separated float values between -1 and +1 '
                              '(e.g. -cs 0.5 0.2).')
+    parser.add_argument('--renderImage', '-rI', action='store_true')
+    parser.add_argument('--imageFrequency', '-iF', type=int, default=None)
+    parser.add_argument('--imagePath', '-iP', type=str, default=None)
     args = parser.parse_args()
     env, get_action = load_policy_and_env(args.fpath,
                                           args.itr if args.itr >= 0 else 'last',
                                           args.deterministic,
                                           args.disc_skill,
                                           args.cont_skill)
-    run_policy(env, get_action, args.len, args.episodes, not (args.norender))
+    run_policy(env, get_action, args.len, args.episodes, not (args.norender), args.renderImage, args.imageFrequency, args.fpath)
