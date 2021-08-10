@@ -25,4 +25,4 @@ DEFAULT_SHORTHAND = True
 
 # Tells the GridSearch how many seconds to pause for before launching 
 # experiments.
-WAIT_BEFORE_LAUNCH = 5
+WAIT_BEFORE_LAUNCH = 1
