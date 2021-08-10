@@ -357,12 +357,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         if directed:
             # Own reward, experimental
             if env_name == "Ant-v2":
-                # xposbefore = env_arg.get_body_com("torso")[0]
                 posbefore = env_arg.get_body_com("torso").copy()
                 o2, _, d, _ = env_arg.step(a_arg)
-                # xposafter = env_arg.get_body_com("torso")[0]
                 posafter = env_arg.get_body_com("torso").copy()
-                # forward_reward = (xposafter - xposbefore) / env_arg.dt
                 vel = (posafter - posbefore) / env_arg.dt
                 movement_reward = np.min([np.dot(movement_vector, vel[0:2]), 2])
                 ctrl_cost = .5 * np.square(a_arg).sum()
