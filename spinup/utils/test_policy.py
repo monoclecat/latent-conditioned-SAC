@@ -3,10 +3,13 @@ import joblib
 import os
 import os.path as osp
 import tensorflow as tf
+import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
+import pygame, sys
+import pygame.locals
 import png
 from gym import wrappers
 
@@ -138,10 +141,37 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
         cont_vec = torch.zeros(0)
 
     if num_disc_skills > 0 or num_cont_skills > 0:
+        pygame.init()
+        BLACK = (0, 0, 0)
+        WIDTH = 300
+        HEIGHT = 300
+        windowSurface = pygame.display.set_mode((WIDTH, HEIGHT), 0, 32)
+
+        windowSurface.fill(BLACK)
+        act_ed_sk_index = torch.zeros(1)
+        cooldown_start = torch.zeros(1)
+
         def get_action(x, writer: SummaryWriter, t):
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
+                for event in pygame.event.get():
+                    if hasattr(event, 'key'): # and time.time() - cooldown_start > 1.0:
+                        active_edit_skill = act_ed_sk_index % model.num_cont_skills()
+                        if event.key == pygame.K_n or event.key == pygame.K_j:
+                            if event.key == pygame.K_j:
+                                cont_vec[0] -= 0.1
+                            else:
+                                cont_vec[0] += 0.1
+                            print(f"New cont skill #1: {np.array(cont_vec[0]).round(1)}")
+                            cooldown_start = torch.as_tensor(time.time())
+                        if event.key == pygame.K_m or event.key == pygame.K_k:
+                            if event.key == pygame.K_k:
+                                cont_vec[1] -= 0.1
+                            else:
+                                cont_vec[1] += 0.1
+                            print(f"New cont skill #2: {np.array(cont_vec[1]).round(1)}")
+
                 pred_disc_skill, pred_cont_skill, cont_skill_var, _, _ = model.d(x, torch.as_tensor(action))
                 if pred_disc_skill is not None:
                     writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
@@ -199,7 +229,7 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, 
             start_paused = False
 
         if renderImage:
-            if episodeImageNumber % imageFrequency == 0:    
+            if episodeImageNumber % imageFrequency == 0:
                 pixels = transformImage(image)
                 path = "{}/images/episode{}_timestep{}.png".format(imageBasePath, n, episodeImageNumber)
                 png.from_array(pixels, 'RGB', info=imageInfo).save(path)
