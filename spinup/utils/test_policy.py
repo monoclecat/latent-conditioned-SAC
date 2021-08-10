@@ -141,36 +141,44 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
         cont_vec = torch.zeros(0)
 
     if num_disc_skills > 0 or num_cont_skills > 0:
-        pygame.init()
-        BLACK = (0, 0, 0)
-        WIDTH = 300
-        HEIGHT = 300
-        windowSurface = pygame.display.set_mode((WIDTH, HEIGHT), 0, 32)
-
-        windowSurface.fill(BLACK)
-        act_ed_sk_index = torch.zeros(1)
-        cooldown_start = torch.zeros(1)
-
         def get_action(x, writer: SummaryWriter, t):
+            global cooldown_start, modulate_skills, do_pygame, modulate_counter
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
-                for event in pygame.event.get():
-                    if hasattr(event, 'key'): # and time.time() - cooldown_start > 1.0:
-                        active_edit_skill = act_ed_sk_index % model.num_cont_skills()
-                        if event.key == pygame.K_n or event.key == pygame.K_j:
-                            if event.key == pygame.K_j:
-                                cont_vec[0] -= 0.1
-                            else:
-                                cont_vec[0] += 0.1
-                            print(f"New cont skill #1: {np.array(cont_vec[0]).round(1)}")
-                            cooldown_start = torch.as_tensor(time.time())
-                        if event.key == pygame.K_m or event.key == pygame.K_k:
-                            if event.key == pygame.K_k:
-                                cont_vec[1] -= 0.1
-                            else:
-                                cont_vec[1] += 0.1
-                            print(f"New cont skill #2: {np.array(cont_vec[1]).round(1)}")
+                if modulate_skills:
+                    if time.time() - cooldown_start > 2.0:
+                        cooldown_start = time.time()
+                        modulate_counter += 1
+                        for i in range(model.num_cont_skills()):
+                            cont_vec[i] = 0.0
+                        # modulate_index = modulate_counter // 2 % model.num_cont_skills()
+                        modu_index = 2
+                        modu_amplitude = 2.0
+                        cont_vec[modu_index] = modu_amplitude if modulate_counter % 2 == 0 else -modu_amplitude
+                        print(f"Current skill modulation: {cont_vec}")
+                elif do_pygame:
+                    for event in pygame.event.get():
+                        if hasattr(event, 'key') and time.time() - cooldown_start > 0.2:
+                            cooldown_start = time.time()
+                            if model.num_cont_skills() > 0 and event.key == pygame.K_b or event.key == pygame.K_h:
+                                if event.key == pygame.K_h:
+                                    cont_vec[0] -= 0.1
+                                else:
+                                    cont_vec[0] += 0.1
+                                print(f"New cont skill #1: {np.array(cont_vec[0]).round(1)}")
+                            if model.num_cont_skills() > 1 and event.key == pygame.K_n or event.key == pygame.K_j:
+                                if event.key == pygame.K_j:
+                                    cont_vec[1] -= 0.1
+                                else:
+                                    cont_vec[1] += 0.1
+                                print(f"New cont skill #2: {np.array(cont_vec[1]).round(1)}")
+                            if model.num_cont_skills() > 2 and event.key == pygame.K_m or event.key == pygame.K_k:
+                                if event.key == pygame.K_k:
+                                    cont_vec[2] -= 0.1
+                                else:
+                                    cont_vec[2] += 0.1
+                                print(f"New cont skill #3: {np.array(cont_vec[2]).round(1)}")
 
                 pred_disc_skill, pred_cont_skill, cont_skill_var, _, _ = model.d(x, torch.as_tensor(action))
                 if pred_disc_skill is not None:
@@ -259,6 +267,7 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, 
 
 if __name__ == '__main__':
     import argparse
+    cooldown_start = np.array(time.time())
 
     parser = argparse.ArgumentParser()
     parser.add_argument('fpath', type=str)
@@ -275,7 +284,24 @@ if __name__ == '__main__':
     parser.add_argument('--renderImage', '-rI', action='store_true')
     parser.add_argument('--imageFrequency', '-iF', type=int, default=None)
     parser.add_argument('--imagePath', '-iP', type=str, default=None)
+    parser.add_argument('--do_pygame', '-game', action='store_true')
+    parser.add_argument('--modulate_skills', '-modulate', action='store_true')
     args = parser.parse_args()
+
+    modulate_skills = args.modulate_skills
+    do_pygame = args.do_pygame
+
+    if modulate_skills:
+        modulate_counter = np.zeros(1)
+    elif do_pygame:
+        pygame.init()
+        BLACK = (0, 0, 0)
+        WIDTH = 300
+        HEIGHT = 300
+        windowSurface = pygame.display.set_mode((WIDTH, HEIGHT), 0, 32)
+
+        windowSurface.fill(BLACK)
+
     env, get_action = load_policy_and_env(args.fpath,
                                           args.itr if args.itr >= 0 else 'last',
                                           args.deterministic,
