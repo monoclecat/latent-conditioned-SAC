@@ -33,6 +33,9 @@ def generateMixedCsv(baseFolder):
         minValues = np.amin(keyValues, axis=0)
         mean = np.mean(keyValues, axis=0)
         median = np.median(keyValues, axis=0)
+        std = np.std(keyValues, axis=0)
+        std_pos = mean + 2 * std
+        std_neg = mean - 2 * std  
 
         pathToKeyOutput = baseFolder + "/toolOutput/" + key
 
@@ -49,6 +52,9 @@ def generateMixedCsv(baseFolder):
         np.savetxt(pathToKeyOutput + "/min.csv", getPrintableArrayFromNumpyArray(minValues),fmt="%d ,%s",header="Epoch, " + key)
         np.savetxt(pathToKeyOutput + "/mean.csv", getPrintableArrayFromNumpyArray(mean),fmt="%d ,%s",header="Epoch, " + key)
         np.savetxt(pathToKeyOutput + "/median.csv", getPrintableArrayFromNumpyArray(median),fmt="%d ,%s",header="Epoch, " + key)
+        np.savetxt(pathToKeyOutput + "/std.csv", getPrintableArrayFromNumpyArray(std),fmt="%d ,%s",header="Epoch, " + key)
+        np.savetxt(pathToKeyOutput + "/std_pos.csv", getPrintableArrayFromNumpyArray(std_pos),fmt="%d ,%s",header="Epoch, " + key)
+        np.savetxt(pathToKeyOutput + "/std_neg.csv", getPrintableArrayFromNumpyArray(std_neg),fmt="%d ,%s",header="Epoch, " + key)
 
 
 
