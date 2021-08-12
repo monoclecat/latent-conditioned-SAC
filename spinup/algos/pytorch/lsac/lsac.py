@@ -535,8 +535,6 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('Epoch/EpRet', with_min_and_max=True)
             logger.log_tabular('Epoch/EpLen', average_only=True)
-            logger.log_tabular('Epoch/AbsVelocity', average_only=True)
-            logger.log_tabular('Epoch/MovementReward', average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
             logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
             logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
@@ -544,7 +542,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             for key in logger.epoch_dict.keys():
                 if key.startswith("Entropy/") or key.startswith("TestEpRet/"):
                     logger.log_tabular(key, with_min_and_max=True)
-                if key.startswith("TestEpLen/") or key.startswith("Loss/"):
+                if key.startswith("TestEpLen/") or key.startswith("Loss/") or key.startswith("Epoch/"):
                     logger.log_tabular(key, average_only=True)
             logger.log_tabular('Time', time.time() - start_time)
 

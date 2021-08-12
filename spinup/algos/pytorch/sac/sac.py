@@ -369,8 +369,6 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             logger.log_tabular('Epoch', epoch)
             logger.log_tabular('Epoch/EpRet', with_min_and_max=True)
             logger.log_tabular('Epoch/EpLen', average_only=True)
-            logger.log_tabular('Epoch/AbsVelocity', average_only=True)
-            logger.log_tabular('Epoch/MovementReward', average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
             logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
             logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
