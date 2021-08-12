@@ -440,7 +440,7 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
         return ep_ret_a, ep_len_a
 
     def movement_unit_vec(cont_skill):
-        return np.array([np.sin(cont_skill*np.pi), np.cos(cont_skill*np.pi)])
+        return np.array([np.cos(cont_skill*np.pi), np.sin(cont_skill*np.pi)])
 
     # Prepare for interaction with environment
     total_steps = steps_per_epoch * epochs
