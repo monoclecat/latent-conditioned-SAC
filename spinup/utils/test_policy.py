@@ -103,6 +103,7 @@ def load_tf_policy(fpath, itr, deterministic=False):
 
 def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_skill=None):
     """ Load a pytorch policy saved with Spinning Up Logger."""
+    global modu_skill, modu_amp, modu_t
 
     fname = osp.join(fpath, 'pyt_save', 'model' + itr + '.pt')
     print('\n\nLoading from %s.\n\n' % fname)
@@ -140,22 +141,34 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
     else:
         cont_vec = torch.zeros(0)
 
+    if modu_skill is not None:
+        assert 0 < modu_skill <= model.num_cont_skills(), \
+            f"--modulate_skill (or -modu_skill) is out of range! There are {model.num_cont_skills()} continuous skills " \
+            f"but you chose to modulate skill #{modu_skill}! Valid options are " \
+            f"{', '.join([str(i+1) for i in range(model.num_cont_skills())])}"
+
+        if modu_amp is None:
+            modu_amp = 1.0
+        else:
+            assert modu_amp > 0.0, f"--modulate_amplitude (or -modu_amp) must be greater 0.0!"
+
+        if modu_t is None:
+            modu_t = 2.0
+        else:
+            assert modu_t > 0.0, f"--modulate_timestep (or -modu_t) must be greater 0.0!"
+
     if num_disc_skills > 0 or num_cont_skills > 0:
         def get_action(x, writer: SummaryWriter, t):
-            global cooldown_start, modulate_skills, do_pygame, modulate_counter
+            global cooldown_start, modu_skill, modu_amp, modu_t, do_pygame, modulate_counter
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
-                if modulate_skills:
-                    if time.time() - cooldown_start > 2.0:
+                if modu_skill is not None:
+                    if time.time() - cooldown_start > modu_t:
                         cooldown_start = time.time()
                         modulate_counter += 1
-                        for i in range(model.num_cont_skills()):
-                            cont_vec[i] = 0.0
-                        # modulate_index = modulate_counter // 2 % model.num_cont_skills()
-                        modu_index = 2
-                        modu_amplitude = 2.0
-                        cont_vec[modu_index] = modu_amplitude if modulate_counter % 2 == 0 else -modu_amplitude
+                        # modu_skill = modulate_counter // 2 % model.num_cont_skills()
+                        cont_vec[modu_skill-1] = modu_amp if modulate_counter % 2 == 0 else -modu_amp
                         print(f"Current skill modulation: {cont_vec}")
                 elif do_pygame:
                     for event in pygame.event.get():
@@ -285,13 +298,17 @@ if __name__ == '__main__':
     parser.add_argument('--imageFrequency', '-iF', type=int, default=None)
     parser.add_argument('--imagePath', '-iP', type=str, default=None)
     parser.add_argument('--do_pygame', '-game', action='store_true')
-    parser.add_argument('--modulate_skills', '-modulate', action='store_true')
+    parser.add_argument('--modulate_skill', '-modu_skill', type=int)
+    parser.add_argument('--modulate_amplitude', '-modu_amp', type=float)
+    parser.add_argument('--modulate_timestep', '-modu_t', type=float)
     args = parser.parse_args()
 
-    modulate_skills = args.modulate_skills
+    modu_skill = args.modulate_skill
+    modu_amp = args.modulate_amplitude
+    modu_t = args.modulate_timestep
     do_pygame = args.do_pygame
 
-    if modulate_skills:
+    if modu_skill is not None:
         modulate_counter = np.zeros(1)
     elif do_pygame:
         pygame.init()
