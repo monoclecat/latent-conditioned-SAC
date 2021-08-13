@@ -540,6 +540,8 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
             logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
             logger.log_tabular('LogProb/LogPi', with_min_and_max=True)
             for key in logger.epoch_dict.keys():
+                if len(logger.epoch_dict[key]) == 0:
+                    continue
                 if key.startswith("Entropy/") or key.startswith("TestEpRet/"):
                     logger.log_tabular(key, with_min_and_max=True)
                 if key.startswith("TestEpLen/") or key.startswith("Loss/") or key.startswith("Epoch/"):
