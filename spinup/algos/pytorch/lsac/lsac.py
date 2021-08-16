@@ -354,9 +354,9 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
 
     def step_env(env_arg, a_arg):
         # Custom env.step wrapper to implement custom reward function across multiple envs
-        if directed:
+        if env_name == "Ant-v2":
             # Own reward, experimental
-            if env_name == "Ant-v2":
+            if directed:
                 posbefore = env_arg.get_body_com("torso").copy()
                 o2, _, d, _ = env_arg.step(a_arg)
                 posafter = env_arg.get_body_com("torso").copy()
@@ -370,13 +370,18 @@ def lsac(env_fn, actor_critic=core.OsaSkillActorCritic, ac_kwargs=dict(), seed=0
                 logger.store_dict({'Epoch/AbsVelocity': np.linalg.norm(vel[0:2])})
                 r = movement_reward - ctrl_cost - contact_cost + survive_reward
             else:
-                posbefore = env_arg.sim.data.qpos[0]
+                posbefore = env_arg.get_body_com("torso").copy()
                 o2, _, d, _ = env_arg.step(a_arg)
-                posafter, height, ang = env_arg.sim.data.qpos[0:3]
-
-                r = (posafter - posbefore) / env_arg.dt
-                r += 1.0
-                r -= 1e-3 * np.square(a_arg).sum()
+                posafter = env_arg.get_body_com("torso").copy()
+                vel = (posafter - posbefore) / env_arg.dt
+                movement_reward = np.min([np.linalg.norm(vel[0:2]), 2])
+                ctrl_cost = .5 * np.square(a_arg).sum()
+                contact_cost = 0.5 * 1e-3 * np.sum(
+                    np.square(np.clip(env_arg.sim.data.cfrc_ext, -1, 1)))
+                survive_reward = 1.0
+                logger.store_dict({'Epoch/MovementReward': movement_reward})
+                logger.store_dict({'Epoch/AbsVelocity': np.linalg.norm(vel[0:2])})
+                r = movement_reward - ctrl_cost - contact_cost + survive_reward
         elif env_name == "Hopper-v2" or env_name == "Walker2d-v2":
             # Modifications to reward according to Osa et al.
             posbefore = env_arg.sim.data.qpos[0]
