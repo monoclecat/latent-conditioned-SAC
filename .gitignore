@@ -12,3 +12,5 @@ runs*/
 _build/
 .env
 plots/
+tools/MovementImages/
+videos/
