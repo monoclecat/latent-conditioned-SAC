@@ -2,6 +2,19 @@ import os
 import csv
 import numpy as np
 
+def getPrintableArrayFromNumpyArray(array):
+    arrayStr = array.astype(str)
+    array[array=='nan'] = 'NaN'
+    printArray = np.zeros(array.size, dtype=[('key_name', int), ("value", 'U6')])
+    printArray['key_name'] = np.arange(1, array.size+1)
+    printArray["value"] = array
+
+    return printArray
+
+def moving_average(x, w):
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+
 def generateMixedCsv(baseFolder):
     directories = [root for root, dirs, files in os.walk(baseFolder)]
     if baseFolder + "/toolOutput" in directories:
@@ -21,42 +34,37 @@ def generateMixedCsv(baseFolder):
 
     os.makedirs(baseFolder + "/toolOutput", exist_ok=True)
 
+    moving_average_steps = [1, 2, 4, 8, 16]
+
     for key in files[0]:
         keyValues = np.zeros(shape=(len(files), len(files[0][key])))
         for index in range(len(files)):
             if key in files[index]:
                 keyValues[index] = files[index][key]
+        
+    
+        for step in moving_average_steps:
 
-        os.makedirs(baseFolder + "/toolOutput/" + key, exist_ok=True)
+            pathToKeyOutput = baseFolder + "/toolOutput/" + "movingAverage" + str(step) + "/" + key
+            
+            os.makedirs(pathToKeyOutput, exist_ok=True)
 
-        maxValues = np.amax(keyValues, axis=0)
-        minValues = np.amin(keyValues, axis=0)
-        mean = np.mean(keyValues, axis=0)
-        median = np.median(keyValues, axis=0)
-        std = np.std(keyValues, axis=0)
-        std_pos = mean + 2 * std
-        std_neg = mean - 2 * std  
+            maxValues = moving_average(np.amax(keyValues, axis=0), step)
+            minValues = moving_average(np.amin(keyValues, axis=0), step)
+            mean = moving_average(np.mean(keyValues, axis=0), step)
+            median = moving_average(np.median(keyValues, axis=0), step)
+            std = moving_average(np.std(keyValues, axis=0), step)
+            std_pos = mean + 2 * std
+            std_neg = mean - 2 * std
+            
 
-        pathToKeyOutput = baseFolder + "/toolOutput/" + key
-
-        def getPrintableArrayFromNumpyArray(array):
-            arrayStr = array.astype(str)
-            array[array=='nan'] = 'NaN'
-            printArray = np.zeros(array.size, dtype=[('key_name', int), ("value", 'U6')])
-            printArray['key_name'] = np.arange(1, array.size+1)
-            printArray["value"] = array
-
-            return printArray
-
-        np.savetxt(pathToKeyOutput + "/max.csv", getPrintableArrayFromNumpyArray(maxValues),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/min.csv", getPrintableArrayFromNumpyArray(minValues),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/mean.csv", getPrintableArrayFromNumpyArray(mean),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/median.csv", getPrintableArrayFromNumpyArray(median),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/std.csv", getPrintableArrayFromNumpyArray(std),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/std_pos.csv", getPrintableArrayFromNumpyArray(std_pos),fmt="%d ,%s",header="Epoch, " + key)
-        np.savetxt(pathToKeyOutput + "/std_neg.csv", getPrintableArrayFromNumpyArray(std_neg),fmt="%d ,%s",header="Epoch, " + key)
-
-
+            np.savetxt(pathToKeyOutput + "/max.csv", getPrintableArrayFromNumpyArray(maxValues),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/min.csv", getPrintableArrayFromNumpyArray(minValues),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/mean.csv", getPrintableArrayFromNumpyArray(mean),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/median.csv", getPrintableArrayFromNumpyArray(median),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/std.csv", getPrintableArrayFromNumpyArray(std),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/std_pos.csv", getPrintableArrayFromNumpyArray(std_pos),fmt="%d ,%s",header="Epoch, " + key)
+            np.savetxt(pathToKeyOutput + "/std_neg.csv", getPrintableArrayFromNumpyArray(std_neg),fmt="%d ,%s",header="Epoch, " + key)
 
 if __name__ == '__main__':
     import argparse

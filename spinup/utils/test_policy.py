@@ -193,9 +193,10 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, 
                 image = env.render(mode='rgb_array')
             else:
                 env.render()
-            time.sleep(1e-3)
+            time.sleep(1)
         if start_paused:
-            input("Press ENTER to start")
+            if not renderImage:
+                input("Press ENTER to start")
             start_paused = False
 
         if renderImage:
@@ -209,16 +210,18 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, 
         ep_ret += r
         ep_len += 1
         t += 1
-        if renderImage:
-            episodeImageNumber+=1
-            if d or (ep_len == max_ep_len):
-                episodeImageNumber = 0
 
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
             print('Episode %d \t EpRet %.3f \t EpLen %d' % (n, ep_ret, ep_len))
             o, r, d, ep_ret, ep_len = env.reset(), 0, False, 0, 0
             n += 1
+
+        if renderImage:
+            episodeImageNumber+=1
+            if d or (ep_len == max_ep_len):
+                break
+                episodeImageNumber = 0
 
     logger.log_tabular('EpRet', with_min_and_max=True)
     logger.log_tabular('EpLen', average_only=True)
