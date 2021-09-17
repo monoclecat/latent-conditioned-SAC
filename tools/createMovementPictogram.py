@@ -3,7 +3,7 @@ import os
 
 contSteps = [-0.9, -0.45, 0.0, 0.45, 0.9]
 
-def createMovementPictograms(runPath, nDisc, nCont, runType):
+def createMovementPictograms(runPath, nDisc, nCont, runType, skip):
     testPolicyCommand = "python -m spinup.run test_policy {runPath} {skills} --renderImage -iF 10"
 
     skills = ""
@@ -18,7 +18,13 @@ def createMovementPictograms(runPath, nDisc, nCont, runType):
 
     if nCont == 2 and nDisc == 0:
         permutions = list(itertools.product(contSteps, contSteps))
+
+        skipcount = skip
+
         for permut in permutions:
+            if skipcount > 0:
+                skipcount = skipcount - 1
+                continue
             deleteCommand = "rm -r {basePath}/images/"
             deleteCommand = deleteCommand.format(basePath=runPath)
             
@@ -49,8 +55,12 @@ def createMovementPictograms(runPath, nDisc, nCont, runType):
             os.system(copyCommand)
 
     if nCont == 1 and nDisc == 3:
+        skipcount = skip
         for disc in range(nDisc):
             for cont in contSteps:
+                if skipcount > 0:
+                    skipcount = skipcount - 1
+                    continue
                 deleteCommand = "rm -r {basePath}/images/"
                 deleteCommand = deleteCommand.format(basePath=runPath)
                 
@@ -87,6 +97,7 @@ if __name__ == '__main__':
     parser.add_argument('--nDisc', "-nD", type=int, required=True)
     parser.add_argument('--nCont', "-nC", type=int, required=True)
     parser.add_argument('--type', "-t", required=True)
+    parser.add_argument("--skip", "-s", type=int, required=False, default=0)
 
     args = parser.parse_args()
-    createMovementPictograms(args.runPath, args.nDisc, args.nCont, args.type)
+    createMovementPictograms(args.runPath, args.nDisc, args.nCont, args.type, args.skip)

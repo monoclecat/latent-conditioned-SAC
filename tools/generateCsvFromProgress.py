@@ -42,7 +42,10 @@ def generateMixedCsv(baseFolder):
             if key in files[index]:
                 keyValues[index] = files[index][key]
         
-    
+        if "TestEpRet" in key:
+            keyValues = np.divide(keyValues, 10)
+
+
         for step in moving_average_steps:
 
             pathToKeyOutput = baseFolder + "/toolOutput/" + "movingAverage" + str(step) + "/" + key
