@@ -43,8 +43,17 @@ Not sure how many skills the agent has been trained on?
 Just run the agent without specifying the skill and the error message will tell you. 
 ```bash
 # Example for an agent with discrete skills and a two-dimensional continuous skill
-python -m spinup.run test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
+python -m spinup.run test_policy data/lsac/lsac_s0 --disc-skill 1 --cont-skill -0.3 0.7
 # or
-python -m spinup.utils.test_policy data/lsac/lsac_s0 --disc_skill 1 --cont_skill -0.3 0.7
+python -m spinup.utils.test_policy data/lsac/lsac_s0 --disc-skill 1 --cont-skill -0.3 0.7
 ```
 
+### Modulation of continuous skills
+When running a trained policy, one of the continuous skills can be modulated at a time. 
+This means the skill is set to plus/minus a value (default: `1`), switching every few seconds (default: `2.0`)
+
+Example: Let the second continuous skill be modulated with an amplitude of `1.2`, switching from `-1.2` and `+1.2` and 
+vice-versa every `3.5` seconds:
+```bash
+python -m spinup.run test_policy data/lsac/lsac_s0 --disc-skill 1 --cont-skill -0.3 0.7 -modu_skill 2 -modu_amp 1.2 -modu_t 3.5
+```

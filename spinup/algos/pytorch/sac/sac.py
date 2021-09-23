@@ -8,6 +8,7 @@ import time
 import spinup.algos.pytorch.sac.core as core
 from spinup.utils.logx import EpochLogger
 from torch.utils.tensorboard import SummaryWriter
+from gym.envs.mujoco.humanoid import mass_center
 
 
 class ReplayBuffer:
@@ -43,10 +44,10 @@ class ReplayBuffer:
 
 
 
-def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=100, replay_size=int(1e6), gamma=0.99, 
-        polyak=0.995, lr=1e-3, alpha=0.2, batch_size=100, start_steps=10000, 
-        update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
+def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
+        steps_per_epoch=5000, epochs=600, replay_size=int(1e6), gamma=0.99,
+        polyak=0.995, lr=3e-4, alpha=0.1, batch_size=256, start_steps=10000,
+        update_after=4096, num_test_episodes=10, update_every=50, max_ep_len=1000,
         logger_kwargs=dict(), save_freq=1):
     """
     Soft Actor-Critic (SAC)
@@ -155,6 +156,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
     np.random.seed(seed)
 
     env, test_env = env_fn(), env_fn()
+    env_name = env.spec.id
     obs_dim = env.observation_space.shape
     act_dim = env.action_space.shape[0]
 
@@ -203,8 +205,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
-        q_info = dict(Q1Vals=q1.detach().numpy(),
-                      Q2Vals=q2.detach().numpy())
+        q_info = {"Q/Q1Vals": q1.detach().numpy(), "Q/Q2Vals": q2.detach().numpy()}
 
         return loss_q, q_info
 
@@ -220,7 +221,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         loss_pi = (alpha * logp_pi - q_pi).mean()
 
         # Useful info for logging
-        pi_info = dict(LogPi=logp_pi.detach().numpy())
+        pi_info = {"LogProb/LogPi": logp_pi.detach().numpy()}
 
         return loss_pi, pi_info
 
@@ -239,8 +240,8 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         q_optimizer.step()
 
         # Record things
-        writer.add_scalar("Loss/Q", loss_q.item(), t)
-        logger.store(LossQ=loss_q.item(), **q_info)
+        logger.store_dict(q_info)
+        logger.store_dict({"Loss/Q": loss_q.item()})
 
         # Freeze Q-networks so you don't waste computational effort 
         # computing gradients for them during the policy learning step.
@@ -258,10 +259,8 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             p.requires_grad = True
 
         # Record things
-        writer.add_scalar("Loss/Pi", loss_pi.item(), t)
-        writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
-        writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
-        logger.store(LossPi=loss_pi.item(), **pi_info)
+        logger.store_dict({"Loss/Pi": loss_pi.item()})
+        logger.store_dict(pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -302,7 +301,33 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             a = env.action_space.sample()
 
         # Step the env
-        o2, r, d, _ = env.step(a)
+        if env_name == "Hopper-v2" or env_name == "Walker2d-v2":
+            # Modifications to reward according to Osa et al.
+            posbefore = env.sim.data.qpos[0]
+            o2, _, d, _ = env.step(a)
+            posafter, height, ang = env.sim.data.qpos[0:3]
+
+            if env_name == "Hopper-v2":
+                r = min((posafter - posbefore) / env.dt, 1)
+            else:
+                # Walker2d-v2
+                r = min((posafter - posbefore) / env.dt, 2)
+
+            r += 1.0
+            r -= 1e-3 * np.square(a).sum()
+        elif env_name == "Humanoid-v2":
+            pos_before = mass_center(env.model, env.sim)
+            o2, _, d, _ = env.step(a)
+            pos_after = mass_center(env.model, env.sim)
+            alive_bonus = 5.0
+            lin_vel_cost = 0.25 * min((pos_after - pos_before) / env.dt, 4)
+            quad_ctrl_cost = 0.1 * np.square(env.sim.data.ctrl).sum()
+            quad_impact_cost = .5e-6 * np.square(env.sim.data.cfrc_ext).sum()
+            quad_impact_cost = min(quad_impact_cost, 10)
+            r = lin_vel_cost - quad_ctrl_cost - quad_impact_cost + alive_bonus
+        else:
+            o2, r, d, _ = env.step(a)
+
         ep_ret += r
         ep_len += 1
 
@@ -320,8 +345,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
-            writer.add_scalar("EpReturn", ep_ret, t//max_ep_len)
-            logger.store(EpRet=ep_ret, EpLen=ep_len)
+            logger.store_dict({"Epoch/EpRet": ep_ret, "Epoch/EpLen": ep_len})
             o, ep_ret, ep_len = env.reset(), 0, 0
 
         # Update handling
@@ -343,19 +367,24 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)
-            logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('TestEpRet', with_min_and_max=True)
-            logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('Epoch/EpRet', with_min_and_max=True)
+            logger.log_tabular('Epoch/EpLen', average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
-            logger.log_tabular('Q1Vals', with_min_and_max=True)
-            logger.log_tabular('Q2Vals', with_min_and_max=True)
-            logger.log_tabular('LogPi', with_min_and_max=True)
-            logger.log_tabular('LossPi', average_only=True)
-            logger.log_tabular('LossQ', average_only=True)
-            logger.log_tabular('Time', time.time()-start_time)
+            logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
+            logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
+            logger.log_tabular('LogProb/LogPi', with_min_and_max=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('Loss/Q', average_only=True)
+            logger.log_tabular('Loss/Pi', average_only=True)
+            logger.log_tabular('Time', time.time() - start_time)
+
+            for key, value in logger.log_current_row.items():
+                writer.add_scalar(key, value, epoch)
+            writer.flush()
+
             logger.dump_tabular()
-    writer.flush()
+            # Log info about epoch
     writer.close()
 
 if __name__ == '__main__':

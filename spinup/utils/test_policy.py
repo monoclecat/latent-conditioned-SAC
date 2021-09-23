@@ -3,10 +3,15 @@ import joblib
 import os
 import os.path as osp
 import tensorflow as tf
+import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from spinup import EpochLogger
 from spinup.utils.logx import restore_tf_graph
+import pygame, sys
+import pygame.locals
+import png
+from gym import wrappers
 
 
 def load_policy_and_env(fpath, itr='last', deterministic=False, disc_skill=None, cont_skill=None):
@@ -98,6 +103,7 @@ def load_tf_policy(fpath, itr, deterministic=False):
 
 def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_skill=None):
     """ Load a pytorch policy saved with Spinning Up Logger."""
+    global modu_skill, modu_amp, modu_t
 
     fname = osp.join(fpath, 'pyt_save', 'model' + itr + '.pt')
     print('\n\nLoading from %s.\n\n' % fname)
@@ -135,19 +141,65 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
     else:
         cont_vec = torch.zeros(0)
 
+    if modu_skill is not None:
+        assert 0 < modu_skill <= model.num_cont_skills(), \
+            f"--modulate_skill (or -modu_skill) is out of range! There are {model.num_cont_skills()} continuous skills " \
+            f"but you chose to modulate skill #{modu_skill}! Valid options are " \
+            f"{', '.join([str(i+1) for i in range(model.num_cont_skills())])}"
+
+        if modu_amp is None:
+            modu_amp = 1.0
+        else:
+            assert modu_amp > 0.0, f"--modulate_amplitude (or -modu_amp) must be greater 0.0!"
+
+        if modu_t is None:
+            modu_t = 2.0
+        else:
+            assert modu_t > 0.0, f"--modulate_timestep (or -modu_t) must be greater 0.0!"
+
     if num_disc_skills > 0 or num_cont_skills > 0:
         def get_action(x, writer: SummaryWriter, t):
+            global cooldown_start, modu_skill, modu_amp, modu_t, do_pygame, modulate_counter
             with torch.no_grad():
                 x = torch.as_tensor(x, dtype=torch.float32)
                 action = model.act(x, torch.cat((disc_vec, cont_vec)), deterministic)
-                pred_disc_skill, pred_cont_skill, cont_skill_var = model.d(x, torch.as_tensor(action))
-                if pred_disc_skill is not None:
-                    pred_disc_skill = pred_disc_skill.softmax(dim=-1)
-                    writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
-                                       {str(x + 1): y for x, y in enumerate(pred_disc_skill)}, t)
-                if pred_cont_skill is not None:
-                    writer.add_scalars(f"PredContSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
-                                       {f"mu{x + 1}": y for x, y in enumerate(pred_cont_skill)})
+                if modu_skill is not None:
+                    if time.time() - cooldown_start > modu_t:
+                        cooldown_start = time.time()
+                        modulate_counter += 1
+                        # modu_skill = modulate_counter // 2 % model.num_cont_skills()
+                        cont_vec[modu_skill-1] = modu_amp if modulate_counter % 2 == 0 else -modu_amp
+                        print(f"Current skill modulation: {cont_vec}")
+                elif do_pygame:
+                    for event in pygame.event.get():
+                        if hasattr(event, 'key') and time.time() - cooldown_start > 0.2:
+                            cooldown_start = time.time()
+                            if model.num_cont_skills() > 0 and event.key == pygame.K_b or event.key == pygame.K_h:
+                                if event.key == pygame.K_h:
+                                    cont_vec[0] -= 0.1
+                                else:
+                                    cont_vec[0] += 0.1
+                                print(f"New cont skill #1: {np.array(cont_vec[0]).round(1)}")
+                            if model.num_cont_skills() > 1 and event.key == pygame.K_n or event.key == pygame.K_j:
+                                if event.key == pygame.K_j:
+                                    cont_vec[1] -= 0.1
+                                else:
+                                    cont_vec[1] += 0.1
+                                print(f"New cont skill #2: {np.array(cont_vec[1]).round(1)}")
+                            if model.num_cont_skills() > 2 and event.key == pygame.K_m or event.key == pygame.K_k:
+                                if event.key == pygame.K_k:
+                                    cont_vec[2] -= 0.1
+                                else:
+                                    cont_vec[2] += 0.1
+                                print(f"New cont skill #3: {np.array(cont_vec[2]).round(1)}")
+
+                # pred_disc_skill, pred_cont_skill, cont_skill_var, _, _ = model.d(x, torch.as_tensor(action))
+                # if pred_disc_skill is not None:
+                    # writer.add_scalars(f"PredDiscSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                       # {str(x + 1): y for x, y in enumerate(pred_disc_skill)}, t)
+                # if pred_cont_skill is not None:
+                    # writer.add_scalars(f"PredContSkill/(disc_skill={disc_skill},cont_skill={cont_skill})",
+                                       # {f"mu{x + 1}": y for x, y in enumerate(pred_cont_skill)})
             return action
     else:
         def get_action(x, writer, t):
@@ -159,11 +211,17 @@ def load_pytorch_policy(fpath, itr, deterministic=False, disc_skill=None, cont_s
     return get_action
 
 
-def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
+def transformImage(image):
+    pixels = image.flatten().reshape(500, 1500)
+    return pixels
+
+def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True, renderImage=False, imageFrequency=None, imageBasePath=None):
     assert env is not None, \
         "Environment not found!\n\n It looks like the environment wasn't saved, " + \
         "and we can't run the agent in it. :( \n\n Check out the readthedocs " + \
         "page on Experiment Outputs for how to handle this situation."
+
+    # env = wrappers.Monitor(env, './videos/' + "test" + '/')
 
     logger = EpochLogger()
     writer = SummaryWriter(comment="test_policy")
@@ -171,19 +229,41 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
     t = 0
 
     start_paused = render
+
+    if renderImage:
+        imageInfo = dict()
+        imageInfo["height"] = 500
+        imageInfo["width"] = 500
+        episodeImageNumber = 0
+        if not(os.path.isdir("{}/images/".format(imageBasePath))):
+            os.mkdir("{}/images/".format(imageBasePath))
+
     while n < num_episodes:
         if render:
-            env.render()
+            if renderImage:
+                image = env.render(mode='rgb_array')
+            else:
+                env.render()
             time.sleep(1e-3)
         if start_paused:
             input("Press ENTER to start")
             start_paused = False
+
+        if renderImage:
+            if episodeImageNumber % imageFrequency == 0:
+                pixels = transformImage(image)
+                path = "{}/images/episode{}_timestep{}.png".format(imageBasePath, n, episodeImageNumber)
+                png.from_array(pixels, 'RGB', info=imageInfo).save(path)
 
         a = get_action(o, writer, t)
         o, r, d, _ = env.step(a)
         ep_ret += r
         ep_len += 1
         t += 1
+        if renderImage:
+            episodeImageNumber+=1
+            if d or (ep_len == max_ep_len):
+                episodeImageNumber = 0
 
         if d or (ep_len == max_ep_len):
             logger.store(EpRet=ep_ret, EpLen=ep_len)
@@ -200,6 +280,7 @@ def run_policy(env, get_action, max_ep_len=None, num_episodes=100, render=True):
 
 if __name__ == '__main__':
     import argparse
+    cooldown_start = np.array(time.time())
 
     parser = argparse.ArgumentParser()
     parser.add_argument('fpath', type=str)
@@ -213,10 +294,34 @@ if __name__ == '__main__':
     parser.add_argument('--cont-skill', '-cs', type=float, default=None, nargs='+',
                         help='Set the continuous skill vector with space-separated float values between -1 and +1 '
                              '(e.g. -cs 0.5 0.2).')
+    parser.add_argument('--renderImage', '-rI', action='store_true')
+    parser.add_argument('--imageFrequency', '-iF', type=int, default=None)
+    parser.add_argument('--imagePath', '-iP', type=str, default=None)
+    parser.add_argument('--do_pygame', '-game', action='store_true')
+    parser.add_argument('--modulate_skill', '-modu_skill', type=int)
+    parser.add_argument('--modulate_amplitude', '-modu_amp', type=float)
+    parser.add_argument('--modulate_timestep', '-modu_t', type=float)
     args = parser.parse_args()
+
+    modu_skill = args.modulate_skill
+    modu_amp = args.modulate_amplitude
+    modu_t = args.modulate_timestep
+    do_pygame = args.do_pygame
+
+    if modu_skill is not None:
+        modulate_counter = np.zeros(1)
+    elif do_pygame:
+        pygame.init()
+        BLACK = (0, 0, 0)
+        WIDTH = 300
+        HEIGHT = 300
+        windowSurface = pygame.display.set_mode((WIDTH, HEIGHT), 0, 32)
+
+        windowSurface.fill(BLACK)
+
     env, get_action = load_policy_and_env(args.fpath,
                                           args.itr if args.itr >= 0 else 'last',
                                           args.deterministic,
                                           args.disc_skill,
                                           args.cont_skill)
-    run_policy(env, get_action, args.len, args.episodes, not (args.norender))
+    run_policy(env, get_action, args.len, args.episodes, not (args.norender), args.renderImage, args.imageFrequency, args.fpath)
