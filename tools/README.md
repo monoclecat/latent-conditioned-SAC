@@ -33,6 +33,7 @@ For taking the images please use the xml of the enviromentFolder and replace tho
 The location of the gym xml file is in the python sideloadpackages of your enviroment.
 
 In general the skybox should be white and the floor should be completly black so the horizon can be detected (The xml files will do that for the given enviroments).
+Please have a look at the image in the folder "exampleImage" for the target image configuration.
 
 ## Create Pictogram for Skills
 
@@ -51,7 +52,7 @@ python tools/create_movement_pictogram.py -rP data/serverExample/2021-07-28_exp_
 
 This script can only be used for the two configurations 2cont0disc and 1cont3disc.
 If other configurations are needed, implement a permutation for this case to iterate through all skills (Or write a generic version :D).
-
+Please create the folder for saving the images first to tools/MovementImages/{Enviromenttype}/disc{nD}_cont{nC}/.
 
 
 ## Questions?
