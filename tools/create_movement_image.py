@@ -1,8 +1,11 @@
 from PIL import Image
 import os
 
+# Method to create a Movement Image by overlaying several images from created by test policy
+# Input: basePath => Path of the images
+#        imageRangeStart => Index of the first Image to be processed
+#        imageRangeEnd => Index of the last Image to be processed, this image will be in the middle of the movementimage 
 def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
-    
     for (dirpath, dirnames, filenames) in os.walk(basePath):
         episode = 0
         while True:
@@ -12,7 +15,7 @@ def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
             if len(episodeImages) == 0:
                 return
 
-            episodeImages.sort()
+            episodeImages.sort(key=lambda f: int(f[17:].split('.')[0]))
 
             episodeImages = episodeImages[int(imageRangeStart):int(imageRangeEnd) + 1]
 
@@ -53,6 +56,11 @@ def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
             episode = episode + 1
         
 
+# Method to create a Movement Image by overlaying several images from created by test policy
+# Input: basePath => Path of the images
+#        imageFrequency => The frequency the images were taken from the simulation
+#        imageRangeStart => Timestep of the first Image to be processed
+#        imageRangeEnd => Timestep of the last Image to be processed, this image will be in the middle of the movementimage 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
