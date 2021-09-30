@@ -4,6 +4,7 @@ import os
 # Method to create a Movement Image by overlaying several images from created by test policy
 # General Idea: By using an image with black floor and white sky, the horizon can be determinated by finding the position of the first black pixel.
 #   Depending on the horizon, the images can be overlayed stabilizing on the horizon line to get the movement to the image.
+#   All completly black and white pixels are set to transparent, to enbable the overlaying.
 #   As a background the image base_movement_image.png is used, so original background can be applied.
 # Input: basePath => Path of the images
 #        imageRangeStart => Index of the first Image to be processed
