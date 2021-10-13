@@ -9,6 +9,9 @@ It is optimized alongside the unaltered soft actor-critic objectives.
 This repository is an implementation of their proposed algorithm, termed _latent-conditioned soft actor-critic (LSAC)_. 
 The code is based on the [OpenAi SpinningUp](https://spinningup.openai.com/) implementation of soft actor-critic and uses **PyTorch**.
 
+The LSAC implementation can be found under `spinup/algos/pytorch/lsac/`. 
+The implementation uses SpinningUp's logging tools and additionally incorporates Tensorboard. 
+
 ## Installation
 Please follow the installation instructions of [spinningup](https://spinningup.openai.com/en/latest/user/installation.html). 
 This installation requires [MuJoCo](http://www.mujoco.org/), for which a license must be obtained. 
