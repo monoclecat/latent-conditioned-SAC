@@ -2,7 +2,6 @@ from PIL import Image
 import os
 
 def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
-    
     for (dirpath, dirnames, filenames) in os.walk(basePath):
         episode = 0
         while True:
@@ -12,7 +11,7 @@ def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
             if len(episodeImages) == 0:
                 return
 
-            episodeImages.sort()
+            episodeImages.sort(key=lambda f: int(f[17:].split('.')[0]))
 
             episodeImages = episodeImages[int(imageRangeStart):int(imageRangeEnd) + 1]
 
