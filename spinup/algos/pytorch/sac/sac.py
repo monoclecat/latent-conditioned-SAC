@@ -205,8 +205,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         loss_q = loss_q1 + loss_q2
 
         # Useful info for logging
-        q_info = dict(Q1Vals=q1.detach().numpy(),
-                      Q2Vals=q2.detach().numpy())
+        q_info = {"Q/Q1Vals": q1.detach().numpy(), "Q/Q2Vals": q2.detach().numpy()}
 
         return loss_q, q_info
 
@@ -222,7 +221,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         loss_pi = (alpha * logp_pi - q_pi).mean()
 
         # Useful info for logging
-        pi_info = dict(LogPi=logp_pi.detach().numpy())
+        pi_info = {"LogProb/LogPi": logp_pi.detach().numpy()}
 
         return loss_pi, pi_info
 
@@ -241,8 +240,8 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         q_optimizer.step()
 
         # Record things
-        writer.add_scalar("Loss/Q", loss_q.item(), t)
-        logger.store(LossQ=loss_q.item(), **q_info)
+        logger.store_dict(q_info)
+        logger.store_dict({"Loss/Q": loss_q.item()})
 
         # Freeze Q-networks so you don't waste computational effort 
         # computing gradients for them during the policy learning step.
@@ -260,10 +259,8 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
             p.requires_grad = True
 
         # Record things
-        writer.add_scalar("Loss/Pi", loss_pi.item(), t)
-        writer.add_scalar("LogProb/Avg/LogPi", np.mean(pi_info['LogPi']), t)
-        writer.add_scalar("LogProb/Std/LogPi", np.std(pi_info['LogPi']), t)
-        logger.store(LossPi=loss_pi.item(), **pi_info)
+        logger.store_dict({"Loss/Pi": loss_pi.item()})
+        logger.store_dict(pi_info)
 
         # Finally, update target networks by polyak averaging.
         with torch.no_grad():
@@ -348,8 +345,7 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
         # End of trajectory handling
         if d or (ep_len == max_ep_len):
-            writer.add_scalar("EpReturn", ep_ret, t//max_ep_len)
-            logger.store(EpRet=ep_ret, EpLen=ep_len)
+            logger.store_dict({"Epoch/EpRet": ep_ret, "Epoch/EpLen": ep_len})
             o, ep_ret, ep_len = env.reset(), 0, 0
 
         # Update handling
@@ -371,19 +367,24 @@ def sac(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
             # Log info about epoch
             logger.log_tabular('Epoch', epoch)
-            logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('TestEpRet', with_min_and_max=True)
-            logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('Epoch/EpRet', with_min_and_max=True)
+            logger.log_tabular('Epoch/EpLen', average_only=True)
             logger.log_tabular('TotalEnvInteracts', t)
-            logger.log_tabular('Q1Vals', with_min_and_max=True)
-            logger.log_tabular('Q2Vals', with_min_and_max=True)
-            logger.log_tabular('LogPi', with_min_and_max=True)
-            logger.log_tabular('LossPi', average_only=True)
-            logger.log_tabular('LossQ', average_only=True)
-            logger.log_tabular('Time', time.time()-start_time)
+            logger.log_tabular('Q/Q1Vals', with_min_and_max=True)
+            logger.log_tabular('Q/Q2Vals', with_min_and_max=True)
+            logger.log_tabular('LogProb/LogPi', with_min_and_max=True)
+            logger.log_tabular('TestEpRet', with_min_and_max=True)
+            logger.log_tabular('TestEpLen', average_only=True)
+            logger.log_tabular('Loss/Q', average_only=True)
+            logger.log_tabular('Loss/Pi', average_only=True)
+            logger.log_tabular('Time', time.time() - start_time)
+
+            for key, value in logger.log_current_row.items():
+                writer.add_scalar(key, value, epoch)
+            writer.flush()
+
             logger.dump_tabular()
-    writer.flush()
+            # Log info about epoch
     writer.close()
 
 if __name__ == '__main__':
