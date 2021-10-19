@@ -1,6 +1,14 @@
 from PIL import Image
 import os
 
+# Method to create a Movement Image by overlaying several images from created by test policy
+# General Idea: By using an image with black floor and white sky, the horizon can be determinated by finding the position of the first black pixel.
+#   Depending on the horizon, the images can be overlayed stabilizing on the horizon line to get the movement to the image.
+#   All completly black and white pixels are set to transparent, to enbable the overlaying.
+#   As a background the image base_movement_image.png is used, so original background can be applied.
+# Input: basePath => Path of the images
+#        imageRangeStart => Index of the first Image to be processed
+#        imageRangeEnd => Index of the last Image to be processed, this image will be in the middle of the movementimage 
 def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
     for (dirpath, dirnames, filenames) in os.walk(basePath):
         episode = 0
@@ -52,6 +60,11 @@ def createMovementImage(basePath, imageRangeStart = 0, imageRangeEnd = -1):
             episode = episode + 1
         
 
+# Method to create a Movement Image by overlaying several images from created by test policy
+# Input: basePath => Path of the images
+#        imageFrequency => The frequency the images were taken from the simulation
+#        imageRangeStart => Timestep of the first Image to be processed
+#        imageRangeEnd => Timestep of the last Image to be processed, this image will be in the middle of the movementimage 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
