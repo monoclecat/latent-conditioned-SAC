@@ -1,0 +1,3 @@
+[submodule "SPFlow"]
+	path = SPFlow
+	url = https://github.com/monoclecat/SPFlow.git
